@@ -9,7 +9,7 @@ from .conftest import dump_database, workspace_secret
 def test_providers_endpoint_reports_status_without_secrets(client):
     data = client.get("/api/providers").json()
     names = {p["provider"] for p in data["providers"]}
-    assert names == {"anthropic", "ollama", "simulated"}
+    assert names == {"anthropic", "gemini", "ollama", "simulated"}
     sim = next(p for p in data["providers"] if p["provider"] == "simulated")
     assert sim["configured"] is True and sim["real"] is False
     assert "sk-ant" not in client.get("/api/providers").text

@@ -55,11 +55,15 @@ TOOL_SPECS = [
     ),
 ]
 _TOOL_BY_NAME = {t.name: t for t in TOOL_SPECS}
+MALFORMED_RETRY_PROMPT = ("Your previous tool call could not be parsed and was not executed. "
+                          "Call one of the tools again with valid JSON arguments, or give your final answer.")
 MAX_RESULT_CHARS = 8000
 
 
 def validate_tool_call(call: ToolCall) -> str | None:
     """Return an error string if the call is invalid, else None."""
+    if call.parse_error:
+        return f"arguments were not valid JSON ({call.parse_error})"
     spec = _TOOL_BY_NAME.get(call.name)
     if spec is None:
         return f"unknown tool '{call.name}'; valid tools are {', '.join(_TOOL_BY_NAME)}"
@@ -167,11 +171,28 @@ class LLMAgent:
                 transcript.append(LLMAgentTranscriptEntry(step, "model_text", text=safe))
                 final_text = safe
 
+            if response.stop_reason == "malformed_tool_call" and not response.tool_calls:
+                # The provider reported a tool call it could not parse. Record it, never
+                # execute anything, and give the model one bounded chance (per step) to retry.
+                rejected = self.gw._record(
+                    event_type="tool_call_rejected", actor="afterimage", action="unknown",
+                    source_event_id=last_event, outcome="rejected", severity="low",
+                    summary="Rejected a malformed tool call reported by the provider.",
+                    evidence={"error": "malformed function call", "step": step})
+                last_event = rejected["event_id"]
+                transcript.append(LLMAgentTranscriptEntry(step, "error", text="malformed tool call (not executed)"))
+                if response.provider_payload is not None:
+                    turns.append(Turn(role="assistant", text=response.text or None,
+                                      provider_payload=response.provider_payload))
+                turns.append(Turn(role="user", text=MALFORMED_RETRY_PROMPT))
+                continue
+
             if not response.tool_calls:
                 stop_reason = response.stop_reason or "end_turn"
                 break
 
-            turns.append(Turn(role="assistant", text=response.text or None, tool_calls=response.tool_calls))
+            turns.append(Turn(role="assistant", text=response.text or None, tool_calls=response.tool_calls,
+                              provider_payload=response.provider_payload))
             results = []
             for call in response.tool_calls:
                 entry, result_payload, event_id = self._execute_call(step, call, last_event,

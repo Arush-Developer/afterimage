@@ -137,6 +137,7 @@ class RunService:
         steps = None
         provider_error = None
         transcript = None
+        agent_stop_reason = None
         try:
             if spec.agent_kind == "llm":
                 outcome = LLMAgent(gateway, provider_obj, task_text, max_steps=self.settings.llm_max_steps,
@@ -145,6 +146,7 @@ class RunService:
                 result = outcome.result
                 steps = outcome.steps
                 provider_error = outcome.provider_error
+                agent_stop_reason = outcome.stop_reason
                 transcript = outcome.transcript
                 if provider_error:
                     status = "failed"
@@ -153,6 +155,7 @@ class RunService:
         except ProviderError as exc:
             status = "failed"
             provider_error = exc.message
+            agent_stop_reason = f"provider_error:{exc.kind}"
             gateway._record(event_type="run_error", actor="afterimage", action="run_agent", outcome="error",
                             severity="medium", summary=f"LLM provider error: {exc.kind}.",
                             evidence={"provider_error": True, "kind": exc.kind})
@@ -187,6 +190,7 @@ class RunService:
             "model": model_name,
             "provider_real": provider_real,
             "agent_steps": steps,
+            "agent_stop_reason": agent_stop_reason,
             "provider_error": provider_error,
         }
         gateway._record(

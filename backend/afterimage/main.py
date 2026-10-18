@@ -32,7 +32,8 @@ from .recorder import EventRecorder, RedactingLogFilter, deserialize_event
 from .recovery import VAULT_FILES, RecoveryVault
 from .experiment import ExperimentService
 from .explainer import IncidentExplainer
-from .providers import ProviderConfigError, ProviderError as LLMProviderError, build_provider, provider_status
+from .providers import (ProviderConfigError, ProviderError as LLMProviderError, build_provider,
+                        check_provider, provider_status, resolved_models)
 from .replay import ReplayService
 from .runs import SCENARIOS, RunService
 
@@ -51,20 +52,20 @@ ChangeId = Literal["restrict-read-scope", "deny-secret-class", "require-approval
 
 # -- request bodies -------------------------------------------------------------
 class LLMRunRequest(BaseModel):
-    provider: Literal["anthropic", "ollama", "simulated"] | None = None
+    provider: Literal["anthropic", "gemini", "ollama", "simulated"] | None = None
     model: str | None = Field(default=None, pattern=r"^[A-Za-z0-9._:/-]{1,100}$")
     enforcement: Literal["protected", "baseline"] = "protected"
 
 
 class ExperimentRequest(BaseModel):
-    provider: Literal["anthropic", "ollama", "simulated"] | None = None
+    provider: Literal["anthropic", "gemini", "ollama", "simulated"] | None = None
     model: str | None = Field(default=None, pattern=r"^[A-Za-z0-9._:/-]{1,100}$")
     trials: int = Field(default=1, ge=1, le=20)
     background: bool = False  # true: return immediately with status "running"; poll GET for progress
 
 
 class ExplainRequest(BaseModel):
-    provider: Literal["anthropic", "ollama", "simulated"] | None = None
+    provider: Literal["anthropic", "gemini", "ollama", "simulated"] | None = None
     model: str | None = Field(default=None, pattern=r"^[A-Za-z0-9._:/-]{1,100}$")
 
 
@@ -220,8 +221,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # Config/credential/model problems are the caller's to fix (400); transient
         # provider problems (timeout, rate limit, 5xx) are 503. The message is safe to
         # surface and never contains key material.
-        status = 400 if isinstance(exc, ProviderConfigError) else (503 if exc.retryable else 502)
-        return JSONResponse(status_code=status, content={"detail": exc.message, "code": f"provider_{exc.kind}"})
+        if isinstance(exc, ProviderConfigError):
+            status = 400
+        elif exc.kind in ("rate_limit", "quota_exhausted"):
+            status = 429
+        else:
+            status = 503 if exc.retryable else 502
+        content: dict[str, Any] = {"detail": exc.message, "code": f"provider_{exc.kind}"}
+        retry_after = getattr(exc, "retry_after_s", None)
+        headers = {}
+        if retry_after:
+            content["retry_after_s"] = retry_after
+            headers["Retry-After"] = str(int(retry_after) + 1)
+        return JSONResponse(status_code=status, content=content, headers=headers)
 
     @app.exception_handler(Exception)
     async def _handle_unknown(_: Request, exc: Exception) -> JSONResponse:
@@ -325,10 +337,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/providers")
     def providers(c: AppContext = Depends(ctx)) -> dict[str, Any]:
-        from .providers import DEFAULT_MODELS, provider_status
         return {"providers": provider_status(c.settings), "default_provider": c.settings.llm_provider,
-                "default_models": DEFAULT_MODELS, "configured_model": c.settings.llm_model,
+                "default_models": resolved_models(c.settings), "configured_model": c.settings.llm_model,
                 "max_trials": c.settings.llm_max_trials, "max_steps": c.settings.llm_max_steps}
+
+    @app.get("/api/providers/{provider}/check")
+    def provider_check(provider: str = Path(pattern=r"^(anthropic|gemini|ollama|simulated)$"),
+                       model: str | None = Query(default=None, pattern=r"^[A-Za-z0-9._:/-]{1,100}$"),
+                       c: AppContext = Depends(ctx)) -> dict[str, Any]:
+        """Live check: credentials accepted, model available, tool-calling support. Uses
+        metadata endpoints only (no content generation), and never returns key material."""
+        return {**check_provider(provider, model, c.settings), "checked_at": utc_now()}
 
     @app.get("/api/runs/{run_id}")
     def get_run(run_id: str = RUN_ID, c: AppContext = Depends(ctx)) -> dict[str, Any]:
@@ -520,6 +539,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                  "run_workspaces": sum(1 for p in s.workspaces_dir.iterdir() if p.is_dir()),
                                  "scripted_agent": "deterministic, no LLM (used for regression tests)"},
             "llm": {"default_provider": s.llm_provider, "default_model": s.llm_model,
+                    "models": resolved_models(s), "ollama_host": s.ollama_host,
+                    "ollama_local_only": not s.ollama_allow_remote,
                     "effort": s.llm_effort, "max_steps": s.llm_max_steps, "max_tokens": s.llm_max_tokens,
                     "timeout_s": s.llm_timeout_s, "max_trials": s.llm_max_trials,
                     "providers": provider_status(s),
