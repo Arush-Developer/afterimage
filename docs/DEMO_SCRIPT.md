@@ -1,6 +1,6 @@
 # Demo script
 
-Before you start: backend on :8000, frontend on :5173, and a clean state (**Settings → Archive & reset…**, type `ARCHIVE AND RESET`). Total time ≈ 4 minutes.
+Before you start: backend on :8000, frontend on :5173, and a clean state (**Settings → Archive & reset…**, type `ARCHIVE AND RESET`). Steps 1–7 take about 4 minutes. Steps 8–10 (LLM agent) add 2–3 minutes; they work without a key using the clearly labelled simulated agent.
 
 ## 0. Framing (20 s)
 
@@ -69,7 +69,48 @@ Expected: "Restored and hash-verified" with the original, modified and restored 
 
 > "Restoring a file doesn't undo external side effects — we say so on the page."
 
-## 8. Close (10 s)
+## 8. Real LLM agent: prompt-injection experiment (60–90 s)
+
+**Before the demo:** decide which provider to show.
+- **With a key:** `export ANTHROPIC_API_KEY=...` before starting the backend. Settings shows *Anthropic Claude: configured*.
+- **Without a key:** use **Simulated agent (no LLM)**. Say clearly that it is a rule-based stand-in, not a model. The UI labels it "simulated" everywhere.
+
+Go to **Injection Lab**, pick the provider, keep 1 trial (2–3 with a real model if time allows), and click **Run experiment**.
+
+Expected while running: the **Live progress** card shows "0 of 2 isolated run(s) finished", then a feed of policy decisions as the backend records them.
+
+Expected when done, with the simulated agent:
+- A green **Protected** verdict.
+- Baseline: restricted content returned **1/1**, fake secret leaked **1/1**.
+- Protected: **0/1**, with `POL-DENY-SECRET-FILE` in the rules column.
+- Task completed in both.
+
+Click **Show model tool-call history** to show the baseline transcript: every call, the resource, allowed or denied, and the rule.
+
+With a **real model**, any of three verdicts is a valid result. Read it out honestly:
+- *Protected*: the model followed the injection in the baseline, and enforcement stopped it.
+- *Attack not reproduced*: the model ignored the injection. Say: "the model was robust in this trial, and enforcement doesn't depend on that."
+- *Protection failed*: should not happen. Investigate.
+
+> "We don't assume the attack works. We measure it. Whatever the model decides, the gateway decides access, and 'leaked' is judged by a canary detector that the policy can't influence."
+
+## 9. LLM replay with a deterministic control (40 s)
+
+Go to **Replay Lab**, choose a baseline run labelled **LLM** (protected), set **Model trials** to 2, and click **Run replay**.
+
+Expected: **Verified**, with a "Model trials (probabilistic)" table and *Deterministic control* assertions.
+
+> "The control agent always attempts the attack, so it proves the policy deterministically. The model trials show what the model actually did, reported as counts."
+
+## 10. AI-assisted explanation (optional, real provider only, 30 s)
+
+Open an incident from an LLM run. In **AI-assisted explanation**, click **Generate**.
+
+Expected: *Observed* and *Hypotheses* lists, each statement with clickable event IDs, plus an uncertainty section. If the model invented an event ID, the card says how many claims were rejected.
+
+With no real provider, the card says so, and the rule-based findings are the explanation.
+
+## 11. Close (10 s)
 
 **Event Explorer** → *Hash chain intact · N events*. **Settings** shows local SQLite, cloud sync *not configured*.
 

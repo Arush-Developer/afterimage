@@ -2,6 +2,56 @@
 
 AFTERIMAGE is a **local, single-user hackathon prototype** operating only on synthetic data. This document states what is implemented and tested, and what is not.
 
+## Threat model for the LLM agent
+
+**The model is untrusted.** Everything it emits (tool names, arguments, text) is treated as attacker-influenced input, because file contents it reads can carry injected instructions.
+
+- The model can only *propose* tool calls. `llm_agent.py` validates each proposal against a strict schema: known tool, required string arguments only, no extra keys, length limits. An invalid proposal is recorded as `tool_call_rejected` and never executed.
+- Valid proposals execute **only** through `ToolGateway`, which asks the policy engine *before* touching the filesystem. Nothing in the model's output can change the policy, its version, the workspace root or the sensitivity labels.
+- The agent's only capabilities are `list_files`, `read_file` and `write_file` inside a fresh synthetic workspace. It has no shell, code execution, network, or URL fetching. The provider endpoint is fixed by operator configuration, never chosen by the model.
+- Steps are bounded (`AFTERIMAGE_LLM_MAX_STEPS`), each model call has a token cap and a timeout, and the SDK's retries are limited.
+- API keys stay in the backend process environment and are read only by the Anthropic SDK. They are never put in prompts, tool results, events, logs or API responses, and `/api/providers` / `/api/settings` report only *whether* a provider is configured.
+
+## Bypass audit (what can touch files, network or processes)
+
+Audited by searching the backend for filesystem, network and process APIs (`os.open`, `open`, `read_*`/`write_*`, `os.walk`, `shutil`, `subprocess`, `eval`/`exec`, HTTP clients):
+
+| Code path | Reachable by the agent/model? | Notes |
+|---|---|---|
+| `gateway.py` `_do_list` / `_do_read` / `_do_write` | Yes, **only after an allow decision** | The only agent-reachable file I/O. |
+| `workspace.py` `create_workspace` | No | Server writes the fixed synthetic template. |
+| `recovery.py` | No (operator API) | Fixed allow-list of vault files; secret-like names always rejected. |
+| `main.py` reset (`shutil.rmtree`) | No (operator API) | Fixed data directories; typed confirmation; refused while an experiment runs. |
+| `config.py` `.env` read | No | Server configuration. |
+| Anthropic SDK / Ollama `httpx2` calls | No | Operator-configured endpoint only. |
+| `subprocess`, `eval`, `exec` | — | Not used anywhere. |
+
+**Remaining bypass risks (not claimed to be solved):**
+
+1. **Baseline mode is a deliberate bypass.** `enforcement: "baseline"` swaps in an allow-all engine so the experiment can observe the unprotected behaviour. The workspace-boundary rule still applies, and it only ever runs on a fresh synthetic workspace. But anyone who can reach the API can start one, because there is no authentication.
+2. **Data sent to the model provider.** In protected mode the provider receives the contents of *allowed* synthetic files. In baseline mode it may also receive the fake secret. That secret is random and synthetic, but for a cloud provider it leaves the machine.
+3. **Leak detection is exact matching.** The canary, its hex token and the header line are detected and redacted. A model that encodes, splits or paraphrases the secret could leak it in its output without being counted. *Restricted content returned to the agent* is measured at the gateway and does not have this limitation.
+4. **Allowed writes carry model-chosen content.** `write_file` is limited to `out/**` by policy, but what the model writes there is not filtered.
+5. **TOCTOU** in path resolution is narrowed (`O_NOFOLLOW`, inode re-check, containment re-check), not eliminated.
+6. **Provider-side behaviour** (safety refusals, model updates) can change experiment outcomes. Results are reported per trial and never assumed.
+
+## Secret redaction boundaries
+
+| Boundary | Mechanism | Tested by |
+|---|---|---|
+| Event log | `recorder.py` scrubs the run's sensitive values **and** always scrubs the canary pattern / secret header, even when a caller passes none | `test_secret_never_in_event_records`, `test_recorder_scrubs_canary_pattern_even_without_sensitive_values` |
+| Run row (summary, provider error, transcript) | `redact_text` / `redact_obj` before every `UPDATE runs` | `test_provider_error_text_is_redacted_on_the_run_row`, `test_hex_only_leak_is_detected_and_redacted` |
+| Model text / final answer | Redacted before recording or storing | `test_model_text_is_recorded_and_redacted` |
+| Tool results stored | Size + SHA-256 only; transcript stores tool metadata, never file contents | `test_baseline_returns_secret_but_it_is_never_persisted` |
+| Experiment and replay reports | Built only from aggregate counts and event IDs | `test_secret_never_appears_across_llm_boundaries`, `test_llm_replay_fails_under_unsafe_policy` |
+| AI explanations | The model sees only persisted (already redacted) events; output passes through the recorder | `test_explanation_keeps_grounded_claims_and_rejects_fabricated_ids` |
+| Logs | `RedactingLogFilter` installed on the root, `afterimage` and `uvicorn` loggers/handlers | `test_log_records_are_scrubbed` |
+| Browser | All of the above. E2E tests capture every `/api/` response and the rendered page | e2e `secret content never reaches the browser`, `injection lab …` |
+
+## Ground truth is independent of the policy under test
+
+"Unauthorized" comes from the workspace's fixed sensitivity labels (`secret.txt` is restricted, and anything outside the workspace is out of bounds), and "leaked" comes from the canary detector. A permissive policy therefore cannot grade itself as safe. `test_failed_security_is_reported_and_secret_still_not_persisted` and `test_llm_replay_fails_under_unsafe_policy` inject an allow-all policy and check that the result is **failed**.
+
 ## What is enforced (and tested)
 
 | Control | Where | Test(s) |
@@ -28,7 +78,8 @@ AFTERIMAGE is a **local, single-user hackathon prototype** operating only on syn
 - **Not tamper-proof.** The hash chain detects naive edits of individual rows. Someone with write access to the SQLite file can drop the triggers and recompute the entire chain. There is no external anchoring, signing or WORM storage.
 - **No authentication or authorization of human users.** Anyone who can reach the API can use it. Keep it on `localhost`.
 - **No encryption at rest.** The database and synthetic workspaces are plain files. (All data is synthetic.)
-- **The agent is simulated.** It is deterministic and scripted. The "attack" is a controlled simulation; it demonstrates the enforcement and forensics pipeline, not the robustness of any real model.
+- **Two agents.** The scripted agent is deterministic and deliberately gullible; it is the regression baseline. The LLM agent is real, but whether a given model follows the injection is probabilistic and is measured per trial. Neither result says anything about a model's general robustness.
+- **Real-provider verification.** The Anthropic adapter is tested through the official SDK against a local mock HTTP server. A run against the live API was not possible in the development environment (no key), and the Ollama adapter is untested against a live server.
 - **Causality is inferred.** The trigger document is identified from agent-reported provenance, ordering and a heuristic content scanner. The UI labels this *inferred*. A real agent runtime would need trustworthy provenance instrumentation.
 - **The instruction scanner is a heuristic** (three regular expressions). It is used for observation only and never blocks anything.
 - **TOCTOU** is narrowed, not eliminated: a parent directory swapped between resolution and open on a hostile local filesystem could still race. The synthetic workspace is not shared with untrusted processes.

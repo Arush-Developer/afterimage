@@ -60,7 +60,7 @@ Open <http://localhost:5173>. Vite proxies `/api` to `http://127.0.0.1:8000` (ov
 ### 3. Tests
 
 ```bash
-# Backend: 98 pytest tests (+2 optional real-provider tests, skipped by default).
+# Backend: 100 pytest tests (+2 optional real-provider tests, skipped by default).
 # No network or API key needed: providers are mocked (a local HTTP server stands in for the
 # Anthropic API, exercising the real SDK).
 cd backend && .venv/bin/pytest -q
@@ -136,7 +136,7 @@ backend/
     replay.py         replay engine (scripted, or LLM trials + deterministic control), assertions, diffs
     recovery.py       snapshot vault with content hashes and verified restore
     main.py           FastAPI app, REST endpoints, idempotency, CORS, resets
-  tests/              pytest suite (98 tests + 2 optional real-provider tests)
+  tests/              pytest suite (100 tests + 2 optional real-provider tests)
 frontend/
   src/api.ts          typed API client
   src/pages/          Overview, Incidents, Investigation, Replay Lab, Injection Lab,

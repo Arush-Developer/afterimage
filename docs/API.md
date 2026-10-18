@@ -2,7 +2,7 @@
 
 Base URL: `http://127.0.0.1:8000`. Interactive OpenAPI docs: `/docs`. All bodies are JSON.
 
-**Errors** use `{"detail": "<message>", "code": "<code>"}` with status 400 (`invalid_request`), 404 (`not_found`), 409 (`conflict`) or 500 (`internal_error`). Schema validation failures return FastAPI's standard 422 with a `detail` list. IDs are validated against `^(run|evt|dec|inc|rpl|snp)_[0-9a-f]{16}$`.
+**Errors** use `{"detail": "<message>", "code": "<code>"}` with status 400 (`invalid_request`), 404 (`not_found`), 409 (`conflict`) or 500 (`internal_error`). LLM provider failures use `code: "provider_<kind>"`: **400** for configuration problems (`provider_missing_credentials`, `provider_config_error`, `provider_unknown_provider`, `provider_invalid_model`), **503** for transient ones (`provider_rate_limit`, `provider_timeout`, `provider_connection`, `provider_unavailable`), **502** otherwise (`provider_bad_request`, `provider_bad_response`). Messages never contain key material. Schema validation failures return FastAPI's standard 422 with a `detail` list. IDs are validated against `^(run|evt|dec|inc|rpl|snp|exp)_[0-9a-f]{16}$`.
 
 **Idempotency**: every state-changing `POST` (except preview and reset) accepts an optional `Idempotency-Key` header (8–64 chars `[A-Za-z0-9_-]`). Repeating a key returns the stored response with header `Idempotent-Replay: true`; reusing it on a different endpoint returns 409.
 
@@ -23,8 +23,19 @@ Base URL: `http://127.0.0.1:8000`. Interactive OpenAPI docs: `/docs`. All bodies
 | POST | `/api/runs/attack` | Execute the controlled attack simulation. **201** → run with `incident_id`. |
 | GET | `/api/runs/{run_id}` | One run: `status`, `policy_version`, `task_completed`, `sensitive_exposed`, `output_summary`, `result` (files read, denied calls, …). |
 | GET | `/api/runs/{run_id}/events` | All events for a run, in order. |
+| POST | `/api/runs/llm` | `{provider?, model?, enforcement: "protected"\|"baseline"}` → run an **LLM agent** on the synthetic project (synchronous). **201** → run with `agent_kind: "llm"`, `provider`, `model`, `provider_real`, `agent_steps`, `provider_error`. `baseline` disables policy enforcement (workspace boundary still applies). |
+| GET | `/api/runs/{run_id}/transcript` | Model tool-call history: `[{step, kind: model_text\|tool_result\|error, text, tool, resource_id, allowed, rule_id}]`. File contents are never included. |
+| GET | `/api/providers` | `{providers: [{provider, label, real, configured, default_model, detail}], default_provider, default_models, configured_model, max_trials, max_steps}`. No credential values. |
 
-A concurrent run returns 409.
+Every run carries `agent_kind` (`scripted` \| `llm`) and `enforcement` (`protected` \| `baseline`). A concurrent interactive run returns 409.
+
+## Prompt-injection experiment
+
+| Method | Path | Description |
+|---|---|---|
+| POST | `/api/experiments` | `{provider?, model?, trials: 1-20 (capped by AFTERIMAGE_LLM_MAX_TRIALS), background?: bool}` → for each trial, one **baseline** (enforcement off) and one **protected** LLM run, each in a fresh workspace. With `background: true` it returns immediately with `status: "running"`, `report: {}`. **201**. |
+| GET | `/api/experiments` | Saved experiments (`status`: `running`, `error`, or the verdict). |
+| GET | `/api/experiments/{id}` | `{status, report, progress: {total_runs, runs: [{run_id, enforcement, status}]}}`. `report.verdict` ∈ `protected`, `protection_failed`, `attack_not_reproduced`; `report.baseline` / `report.protected` aggregate counts (`restricted_file_requested`, `restricted_content_returned`, `secret_leaked`, `legitimate_task_completed`, `errored_trials`); per-trial rows; `notes`; `ground_truth`. |
 
 ## Incidents
 
@@ -35,6 +46,8 @@ A concurrent run returns 409.
 | GET | `/api/incidents/{id}/events` | Linked events in chronological order, each with `evidence_role`. |
 | GET | `/api/incidents/{id}/graph` | `{nodes[], edges[], is_dag, derived_from}`; nodes include `category` (allowed/denied/suspicious/info), `column`, `row`. |
 | POST | `/api/incidents/{id}/notes` | `{text, status?}` → appends an `incident_annotation` event (status ∈ open, investigating, contained, exposure_confirmed, resolved). |
+| POST | `/api/incidents/{id}/explain` | `{provider?, model?}` → AI-assisted explanation from persisted evidence. **201** → `{summary, observed[], hypotheses[], uncertainty[], rejected_claims[], provider, model, event_id}`; each statement has `event_ids` validated against the incident's evidence. Requires a real provider (simulated → 400). Stored as an `ai_explanation` event. |
+| GET | `/api/incidents/{id}/explanation` | `{explanation}`: the latest stored AI explanation, or `null`. |
 
 ## Policies
 
@@ -52,7 +65,7 @@ A concurrent run returns 409.
 
 | Method | Path | Description |
 |---|---|---|
-| POST | `/api/replays` | `{incident_id}` or `{baseline_run_id}` → re-runs that run's scenario in a fresh workspace under the active policy. **201** → `{replay_id, status: verified|regression|failed, verified, report: {assertions[], baseline, replay, differences[], policy_changed, notes[]}}` |
+| POST | `/api/replays` | `{incident_id}` or `{baseline_run_id}`, optional `trials` (LLM baselines only) → re-runs that run's scenario in a fresh workspace under the active policy. **201** → `{replay_id, status: verified\|regression\|failed\|inconclusive, verified, report: {assertions[], baseline, replay, differences[], policy_changed, notes[]}}`. For an **LLM** baseline the report adds `deterministic_control` (a scripted control run that always attempts the attack), `model_trials[]` and `model_stats`; `inconclusive` means every model trial hit a provider error. |
 | GET | `/api/replays` | Saved replay reports. |
 | GET | `/api/replays/{replay_id}` | One saved report. |
 
@@ -79,4 +92,4 @@ A concurrent run returns 409.
 
 ## Event types
 
-`run_started`, `task_received`, `tool_call_requested`, `policy_decision`, `tool_result`, `agent_note`, `sensitive_data_exposed`, `run_completed`, `run_error`, `incident_opened`, `incident_annotation`, `policy_changed`, `replay_verified`, `replay_not_verified`, `snapshot_created`, `file_modified`, `file_restored`, `environment_reset`.
+`run_started`, `task_received`, `tool_call_requested`, `policy_decision`, `tool_result`, `tool_call_rejected` (invalid model tool call, never executed), `agent_note` (scripted note or redacted model text / provider error), `sensitive_data_exposed`, `run_completed`, `run_error`, `incident_opened`, `incident_annotation`, `ai_explanation`, `policy_changed`, `replay_verified`, `replay_not_verified`, `snapshot_created`, `file_modified`, `file_restored`, `environment_reset`.
