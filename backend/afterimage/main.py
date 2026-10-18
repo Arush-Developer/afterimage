@@ -31,7 +31,7 @@ from .policy_store import PolicyStore
 from .recorder import EventRecorder, deserialize_event
 from .recovery import VAULT_FILES, RecoveryVault
 from .experiment import ExperimentService
-from .providers import PROVIDERS, ProviderConfigError, ProviderError as LLMProviderError, provider_status
+from .providers import ProviderConfigError, ProviderError as LLMProviderError, provider_status
 from .replay import ReplayService
 from .runs import SCENARIOS, RunService
 
@@ -124,7 +124,7 @@ class AppContext:
         self.runs = RunService(s, self.db, self.recorder, self.policies)
         self.investigator = Investigator(self.db, self.recorder, self.policies)
         self.replays = ReplayService(self.db, self.runs, self.investigator)
-        self.experiments = ExperimentService(self.db, self.runs, s)
+        self.experiments = ExperimentService(self.db, self.runs, s, self.investigator)
         self.vault = RecoveryVault(s.vault_dir, self.db, self.recorder)
         self.vault.ensure()
 

@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from .agent import DemoAgent
-from .common import ConflictError, NotFoundError, ValidationFailure, new_id, utc_now
+from .common import ConflictError, NotFoundError, new_id, utc_now
 from .config import Settings
 from .db import Database, dumps, loads
 from .gateway import ToolGateway

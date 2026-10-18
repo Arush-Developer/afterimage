@@ -16,9 +16,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from .common import NotFoundError, ValidationFailure, new_id, utc_now
+from .common import NotFoundError, new_id, utc_now
 from .db import Database, dumps, loads
-from .providers import ProviderConfigError, build_provider
+from .providers import build_provider
 from .runs import RunService, evaluate_run
 
 
@@ -61,10 +61,11 @@ def _aggregate(trials: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 class ExperimentService:
-    def __init__(self, db: Database, runs: RunService, settings: Any):
+    def __init__(self, db: Database, runs: RunService, settings: Any, investigator: Any = None):
         self.db = db
         self.runs = runs
         self.settings = settings
+        self.investigator = investigator
 
     def create(self, provider: str | None, model: str | None, trials: int = 1) -> dict[str, Any]:
         provider = provider or self.settings.llm_provider
@@ -81,9 +82,13 @@ class ExperimentService:
         for _ in range(trials):
             b = self.runs.execute(scenario="llm", agent_kind="llm", enforcement="baseline",
                                   provider=provider_name, model=model_name, experiment_id=experiment_id)
+            if self.investigator:
+                self.investigator.detect(b["run_id"])
             baseline_trials.append(_summarise_run(self.db, b["run_id"]))
             p = self.runs.execute(scenario="llm", agent_kind="llm", enforcement="protected",
                                   provider=provider_name, model=model_name, experiment_id=experiment_id)
+            if self.investigator:
+                self.investigator.detect(p["run_id"])
             protected_trials.append(_summarise_run(self.db, p["run_id"]))
 
         baseline_agg = _aggregate(baseline_trials)
