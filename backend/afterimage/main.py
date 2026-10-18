@@ -28,10 +28,11 @@ from .db import Database, dumps, loads
 from .investigator import INCIDENT_STATUSES, Investigator
 from .policy import CHANGE_CATALOG
 from .policy_store import PolicyStore
-from .recorder import EventRecorder, deserialize_event
+from .recorder import EventRecorder, RedactingLogFilter, deserialize_event
 from .recovery import VAULT_FILES, RecoveryVault
 from .experiment import ExperimentService
-from .providers import ProviderConfigError, ProviderError as LLMProviderError, provider_status
+from .explainer import IncidentExplainer
+from .providers import ProviderConfigError, ProviderError as LLMProviderError, build_provider, provider_status
 from .replay import ReplayService
 from .runs import SCENARIOS, RunService
 
@@ -61,6 +62,11 @@ class ExperimentRequest(BaseModel):
     trials: int = Field(default=1, ge=1, le=20)
 
 
+class ExplainRequest(BaseModel):
+    provider: Literal["anthropic", "ollama", "simulated"] | None = None
+    model: str | None = Field(default=None, pattern=r"^[A-Za-z0-9._:/-]{1,100}$")
+
+
 class PolicyPreviewRequest(BaseModel):
     change_ids: list[ChangeId] = Field(min_length=1, max_length=4)
 
@@ -79,6 +85,7 @@ class PolicyRevertRequest(BaseModel):
 class ReplayRequest(BaseModel):
     baseline_run_id: str | None = Field(default=None, pattern=r"^run_[0-9a-f]{16}$")
     incident_id: str | None = Field(default=None, pattern=r"^inc_[0-9a-f]{16}$")
+    trials: int = Field(default=1, ge=1, le=20)
 
 
 class SnapshotRequest(BaseModel):
@@ -125,6 +132,7 @@ class AppContext:
         self.investigator = Investigator(self.db, self.recorder, self.policies)
         self.replays = ReplayService(self.db, self.runs, self.investigator)
         self.experiments = ExperimentService(self.db, self.runs, s, self.investigator)
+        self.explainer = IncidentExplainer(self.db, self.recorder, self.investigator)
         self.vault = RecoveryVault(s.vault_dir, self.db, self.recorder)
         self.vault.ensure()
 
@@ -176,8 +184,21 @@ class AppContext:
                 "workspaces_removed": removed}
 
 
+def _install_log_redaction() -> None:
+    """Scrub the synthetic canary from every log record handled by existing handlers."""
+    redactor = RedactingLogFilter()
+    for name in ("", "afterimage", "uvicorn", "uvicorn.error", "uvicorn.access"):
+        logger = logging.getLogger(name)
+        if not any(isinstance(f, RedactingLogFilter) for f in logger.filters):
+            logger.addFilter(redactor)
+        for handler in logger.handlers:
+            if not any(isinstance(f, RedactingLogFilter) for f in handler.filters):
+                handler.addFilter(redactor)
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or load_settings()
+    _install_log_redaction()
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
@@ -358,6 +379,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return idempotent(c, idempotency_key, f"incidents/{incident_id}/notes",
                           lambda: c.investigator.annotate(incident_id, body.text, body.status), 201)
 
+    @app.post("/api/incidents/{incident_id}/explain", status_code=201)
+    def explain_incident(body: ExplainRequest, incident_id: str = INC_ID,
+                         idempotency_key: str | None = Header(default=None), c: AppContext = Depends(ctx)) -> JSONResponse:
+        def run() -> dict[str, Any]:
+            provider = build_provider(body.provider or c.settings.llm_provider, body.model, c.settings)
+            return c.explainer.explain(incident_id, provider, max_tokens=c.settings.llm_max_tokens,
+                                       timeout=c.settings.llm_timeout_s)
+        return idempotent(c, idempotency_key, f"incidents/{incident_id}/explain", run, 201)
+
+    @app.get("/api/incidents/{incident_id}/explanation")
+    def incident_explanation(incident_id: str = INC_ID, c: AppContext = Depends(ctx)) -> dict[str, Any]:
+        return {"explanation": c.explainer.latest(incident_id)}
+
     # -- policies -------------------------------------------------------------------
     @app.get("/api/policies")
     def policies(c: AppContext = Depends(ctx)) -> dict[str, Any]:
@@ -392,7 +426,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def create_replay(body: ReplayRequest, idempotency_key: str | None = Header(default=None),
                       c: AppContext = Depends(ctx)) -> JSONResponse:
         return idempotent(c, idempotency_key, "replays",
-                          lambda: c.replays.create(body.baseline_run_id, body.incident_id), 201)
+                          lambda: c.replays.create(body.baseline_run_id, body.incident_id, body.trials), 201)
 
     @app.get("/api/replays/{replay_id}")
     def get_replay(replay_id: str = RPL_ID, c: AppContext = Depends(ctx)) -> dict[str, Any]:

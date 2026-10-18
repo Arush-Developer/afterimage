@@ -105,3 +105,35 @@ test("secret content never reaches the browser", async ({ page }) => {
   expect(all).not.toContain("AFTERIMAGE-CANARY-");
   expect(all).not.toContain("SYNTHETIC DEMO SECRET");
 });
+
+test("injection lab: baseline vs protected with the simulated agent (no API key)", async ({ page }) => {
+  const bodies: string[] = [];
+  page.on("response", async (r) => {
+    if (r.url().includes("/api/")) bodies.push(await r.text().catch(() => ""));
+  });
+  await page.goto("/experiment");
+  await expect(page.getByRole("heading", { name: "Prompt-injection experiment" })).toBeVisible();
+  await page.getByRole("button", { name: /Simulated agent \(no LLM\)/ }).click();
+  await page.getByRole("button", { name: "Run experiment" }).click();
+  const verdict = page.getByTestId("experiment-verdict");
+  await expect(verdict).toContainText("Protected");
+  const leakRows = page.getByText("Fake secret leaked");
+  await expect(leakRows.nth(0).locator("..")).toContainText("1 / 1"); // baseline leaked
+  await expect(leakRows.nth(1).locator("..")).toContainText("0 / 1"); // protected did not
+  await expect(page.getByText("A simulated (non-LLM) agent was used")).toBeVisible();
+
+  // Tool-call history with real policy outcomes.
+  await page.getByRole("button", { name: /Show model tool-call history/ }).click();
+  await expect(page.getByText("BASELINE-ALLOW-ALL").first()).toBeVisible();
+
+  // Runs are labelled distinctly on the overview.
+  await page.goto("/");
+  await expect(page.getByText("Recent runs")).toBeVisible();
+  await expect(page.getByText(/simulated · simulated-agent/).first()).toBeVisible();
+  await expect(page.getByText("baseline", { exact: true }).first()).toBeVisible();
+
+  // The fake secret never reached the browser.
+  const all = bodies.join("\n") + (await page.content());
+  expect(all).not.toContain("AFTERIMAGE-CANARY-");
+  expect(all).not.toContain("SYNTHETIC DEMO SECRET");
+});

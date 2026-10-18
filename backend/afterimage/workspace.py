@@ -88,7 +88,8 @@ class Workspace:
     @property
     def sensitive_values(self) -> tuple[str, ...]:
         """Values that must never leave the gateway or be persisted."""
-        return (self.canary, SECRET_HEADER)
+        token = self.canary.rsplit("-", 1)[-1]  # the random hex part alone also counts as a leak
+        return (self.canary, token, SECRET_HEADER)
 
     def sensitivity(self, canonical_path: str | None) -> str:
         if canonical_path is None:

@@ -36,7 +36,7 @@ export interface RunResult {
 
 export interface Run {
   run_id: string;
-  scenario: "benign" | "attack";
+  scenario: "benign" | "attack" | "llm";
   scenario_title: string;
   kind: "scenario" | "replay";
   status: string;
@@ -49,6 +49,14 @@ export interface Run {
   result: RunResult | null;
   incident_id: string | null;
   simulated_attack: boolean;
+  agent_kind: "scripted" | "llm";
+  enforcement: "protected" | "baseline";
+  provider: string | null;
+  model: string | null;
+  provider_real: boolean | null;
+  agent_steps: number | null;
+  provider_error: string | null;
+  experiment_id: string | null;
 }
 
 export interface Incident {
@@ -278,7 +286,11 @@ export interface Dashboard {
     verified_replays: number;
     replays: number;
     events: number;
+    llm_runs: number;
+    experiments: number;
+    experiments_protected: number;
   };
+  recent_experiments?: ExperimentSummary[];
   recent_incidents: Incident[];
   recent_runs: Run[];
   policy: { version: number; name: string; rule_count: number; disabled_tools: string[]; change_summary: string; created_at: string };
@@ -329,7 +341,18 @@ export interface EventPage {
 export interface SettingsInfo {
   version: string;
   database: { engine: string; file: string; size_bytes: number; events: number; hash_chain: ChainStatus };
-  demo_environment: { synthetic_only: boolean; vault_files: string[]; scenarios: string[]; policy_changes: string[]; run_workspaces: number; llm: string };
+  demo_environment: { synthetic_only: boolean; vault_files: string[]; scenarios: string[]; policy_changes: string[]; run_workspaces: number; scripted_agent: string };
+  llm: {
+    default_provider: string;
+    default_model: string | null;
+    effort: string;
+    max_steps: number;
+    max_tokens: number;
+    timeout_s: number;
+    max_trials: number;
+    providers: ProviderStatus[];
+    note: string;
+  };
   cors_origins: string[];
   cloud_sync: { status: string; detail: string };
   archives: string[];
@@ -341,6 +364,113 @@ export interface ChainStatus {
   checked: number;
   first_invalid_event_id: string | null;
   reason: string | null;
+}
+
+export interface AiExplanation {
+  incident_id: string;
+  provider: string;
+  model: string;
+  summary: string;
+  observed: { statement: string; event_ids: string[] }[];
+  hypotheses: { statement: string; event_ids: string[] }[];
+  uncertainty: string[];
+  rejected_claims: { kind: string; statement: string; unknown_event_ids: string[]; reason: string }[];
+  event_id: string;
+  created_at?: string;
+}
+
+export interface ProviderStatus {
+  provider: string;
+  label: string;
+  real: boolean;
+  configured: boolean;
+  default_model: string;
+  detail: string;
+}
+
+export interface ProvidersResponse {
+  providers: ProviderStatus[];
+  default_provider: string;
+  default_models: Record<string, string>;
+  configured_model: string | null;
+  max_trials: number;
+  max_steps: number;
+}
+
+export interface TranscriptEntry {
+  step: number;
+  kind: "model_text" | "tool_call" | "tool_result" | "error";
+  text: string;
+  tool: string | null;
+  resource_id: string | null;
+  allowed: boolean | null;
+  rule_id: string | null;
+}
+
+export interface TrialResult {
+  run_id: string;
+  status: string;
+  enforcement: string;
+  restricted_file_requested: boolean;
+  restricted_content_returned: boolean;
+  secret_leaked: boolean;
+  unauthorized_attempted: number;
+  unauthorized_blocked: number;
+  unauthorized_allowed: number;
+  legitimate_task_completed: boolean;
+  exposure_event_ids: string[];
+  rules_responsible: string[];
+  provider_error: string | null;
+}
+
+export interface TrialAggregate {
+  trials: number;
+  completed_trials: number;
+  errored_trials: number;
+  restricted_file_requested: number;
+  restricted_content_returned: number;
+  secret_leaked: number;
+  legitimate_task_completed: number;
+  run_ids: string[];
+}
+
+export interface ExperimentReport {
+  verdict: "protected" | "protection_failed" | "attack_not_reproduced";
+  headline: string;
+  provider: string;
+  model: string;
+  provider_real: boolean;
+  trials: number;
+  attack_reproduced_in_baseline: boolean;
+  protection_held: boolean;
+  baseline: TrialAggregate;
+  protected: TrialAggregate;
+  baseline_trials: TrialResult[];
+  protected_trials: TrialResult[];
+  notes: string[];
+  ground_truth: string;
+}
+
+export interface Experiment {
+  experiment_id: string;
+  created_at: string;
+  provider: string;
+  model: string;
+  provider_real: boolean;
+  trials: number;
+  status: string;
+  task: string;
+  report: ExperimentReport;
+}
+
+export interface ExperimentSummary {
+  experiment_id: string;
+  created_at: string;
+  provider: string;
+  model: string;
+  provider_real: boolean;
+  trials: number;
+  status: string;
 }
 
 export class ApiError extends Error {
@@ -391,11 +521,22 @@ export const api = {
   runs: () => get<Run[]>("/api/runs"),
   run: (id: string) => get<Run>(`/api/runs/${id}`),
   runEvents: (id: string) => get<AfterEvent[]>(`/api/runs/${id}/events`),
+  runTranscript: (id: string) => get<{ run_id: string; transcript: TranscriptEntry[] }>(`/api/runs/${id}/transcript`),
+  providers: () => get<ProvidersResponse>("/api/providers"),
+  startLlmRun: (body: { provider?: string; model?: string | null; enforcement: "protected" | "baseline" }) =>
+    post<Run>("/api/runs/llm", body),
+  experiments: () => get<ExperimentSummary[]>("/api/experiments"),
+  experiment: (id: string) => get<Experiment>(`/api/experiments/${id}`),
+  createExperiment: (body: { provider?: string; model?: string | null; trials: number }) =>
+    post<Experiment>("/api/experiments", body),
   startRun: (scenario: "benign" | "attack") => post<Run>(`/api/runs/${scenario}`),
   incidents: () => get<Incident[]>("/api/incidents"),
   incident: (id: string) => get<IncidentReport>(`/api/incidents/${id}`),
   incidentEvents: (id: string) => get<AfterEvent[]>(`/api/incidents/${id}/events`),
   incidentGraph: (id: string) => get<IncidentGraph>(`/api/incidents/${id}/graph`),
+  explainIncident: (id: string, body: { provider?: string; model?: string | null }) =>
+    post<AiExplanation>(`/api/incidents/${id}/explain`, body),
+  incidentExplanation: (id: string) => get<{ explanation: AiExplanation | null }>(`/api/incidents/${id}/explanation`),
   annotate: (id: string, text: string, status?: string) => post<AfterEvent>(`/api/incidents/${id}/notes`, { text, status }),
   policies: () => get<PoliciesResponse>("/api/policies"),
   previewPolicy: (change_ids: string[]) => post<PolicyPreview>("/api/policies/preview", { change_ids }),

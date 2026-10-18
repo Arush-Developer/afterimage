@@ -92,10 +92,72 @@ def test_llm_run_rejects_unavailable_provider_without_credentials(client, monkey
     assert r.status_code == 400 and r.json()["code"] == "provider_missing_credentials"
 
 
-def test_llm_run_is_not_replayable_by_scripted_engine(client):
-    run = client.post("/api/runs/llm", json={"provider": "simulated", "enforcement": "baseline"}).json()
-    r = client.post("/api/replays", json={"baseline_run_id": run["run_id"]})
-    assert r.status_code == 400 and "experiment" in r.json()["detail"]
+def _llm_baseline(client):
+    return client.post("/api/runs/llm", json={"provider": "simulated", "enforcement": "protected"}).json()
+
+
+def _apply(client, change_ids):
+    base = client.get("/api/policies").json()["active"]["version"]
+    r = client.post("/api/policies/apply", json={"change_ids": change_ids, "base_version": base, "confirm": True})
+    assert r.status_code == 200, r.text
+
+
+def test_llm_replay_after_remediation_is_verified(client):
+    base = _llm_baseline(client)
+    _apply(client, ["restrict-read-scope", "deny-secret-class"])
+    replay = client.post("/api/replays", json={"baseline_run_id": base["run_id"], "trials": 2}).json()
+    report = replay["report"]
+    assert replay["status"] == "verified" and replay["verified"] is True
+    assert report["deterministic_control"]["status"] == "verified"
+    assert len(report["model_trials"]) == 2 and report["model_stats"]["attack_attempted"] == 2
+    checks = {a["id"]: a for a in report["assertions"]}
+    assert checks["model_unauthorized_blocked"]["passed"] and checks["model_no_sensitive_exposure"]["passed"]
+    assert checks["model_attack_attempted"]["required"] is False
+    assert any("deterministic" in n for n in report["notes"]) and any("probabilistic" in n for n in report["notes"])
+    # assertions cite real persisted events
+    known = set()
+    for t in report["model_trials"]:
+        known |= {e["event_id"] for e in client.get(f"/api/runs/{t['run_id']}/events").json()}
+    for a in report["assertions"]:
+        if a["id"].startswith("model_") and a["required"]:
+            assert set(a["evidence_event_ids"]) <= known
+
+
+def test_llm_replay_reports_regression(client):
+    base = _llm_baseline(client)
+    _apply(client, ["disable-write-tool"])
+    replay = client.post("/api/replays", json={"baseline_run_id": base["run_id"]}).json()
+    assert replay["status"] == "regression" and not replay["verified"]
+
+
+def test_llm_replay_inconclusive_when_every_model_trial_errors(client, monkeypatch):
+    base = _llm_baseline(client)
+    import afterimage.runs as runs_module
+    from afterimage.providers import ProviderUnavailableError, SimulatedInjectionProvider
+
+    class Down(SimulatedInjectionProvider):
+        def complete(self, **kwargs):
+            raise ProviderUnavailableError("down", kind="connection")
+
+    monkeypatch.setattr(runs_module, "build_provider", lambda *a, **k: Down())
+    replay = client.post("/api/replays", json={"baseline_run_id": base["run_id"], "trials": 2}).json()
+    assert replay["status"] == "inconclusive" and not replay["verified"]
+    # the deterministic control still ran and passed
+    assert replay["report"]["deterministic_control"]["status"] == "verified"
+
+
+def test_llm_replay_fails_under_unsafe_policy(client, ctx):
+    from afterimage.common import utc_now
+    from afterimage.db import dumps
+    from afterimage.policy import PolicyDocument, Rule
+    base = _llm_baseline(client)
+    unsafe = PolicyDocument(name="unsafe", rules=[
+        Rule(rule_id="ALLOW-ALL", effect="allow", actions=["*"], resources=[".", "**"], description="test only")])
+    ctx.db.execute("INSERT INTO policies (version, document, change_summary, applied_changes, created_at) "
+                   "VALUES (2, ?, 'unsafe', '[]', ?)", (dumps(unsafe.model_dump()), utc_now()))
+    replay = client.post("/api/replays", json={"baseline_run_id": base["run_id"]}).json()
+    assert replay["status"] == "failed"
+    assert "AFTERIMAGE-CANARY" not in client.get(f"/api/replays/{replay['replay_id']}").text
 
 
 def test_dashboard_counts_llm_and_experiments(client):

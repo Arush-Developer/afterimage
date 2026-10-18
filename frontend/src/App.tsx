@@ -2,6 +2,7 @@ import { Link, Route, Routes } from "react-router-dom";
 import { Layout } from "./components/Layout";
 import { EmptyState } from "./components/ui";
 import { EventExplorer } from "./pages/EventExplorer";
+import { ExperimentLab } from "./pages/ExperimentLab";
 import { Incidents } from "./pages/Incidents";
 import { Investigation } from "./pages/Investigation";
 import { Overview } from "./pages/Overview";
@@ -19,6 +20,7 @@ export function App() {
         <Route path="/investigation" element={<Investigation />} />
         <Route path="/investigation/:incidentId" element={<Investigation />} />
         <Route path="/replay" element={<ReplayLab />} />
+        <Route path="/experiment" element={<ExperimentLab />} />
         <Route path="/policies" element={<Policies />} />
         <Route path="/recovery" element={<RecoveryVault />} />
         <Route path="/events" element={<EventExplorer />} />

@@ -252,3 +252,19 @@ export function SimulatedNotice({ children }: { children?: ReactNode }) {
     </div>
   );
 }
+
+export function RunKindBadge({ run }: { run: { agent_kind: string; provider?: string | null; model?: string | null; provider_real?: boolean | null } }) {
+  if (run.agent_kind !== "llm") return <Badge tone="neutral">scripted</Badge>;
+  const tone = run.provider_real ? "accent" : "warn";
+  return (
+    <Badge tone={tone}>
+      {run.provider_real ? "LLM" : "simulated"}{run.model ? ` · ${run.model}` : run.provider ? ` · ${run.provider}` : ""}
+    </Badge>
+  );
+}
+
+export function EnforcementBadge({ enforcement }: { enforcement: string }) {
+  return enforcement === "baseline"
+    ? <Badge tone="bad">enforcement OFF</Badge>
+    : <Badge tone="good">enforcement ON</Badge>;
+}

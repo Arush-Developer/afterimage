@@ -18,7 +18,7 @@ from .llm_agent import LLMAgent
 from .policy import allow_all_engine
 from .policy_store import PolicyStore
 from .providers import ProviderError, build_provider
-from .recorder import REDACTED, EventRecorder, deserialize_event
+from .recorder import EventRecorder, deserialize_event, redact_obj, redact_text
 from .workspace import REQUIRED_TASK_READS, SUMMARY_OUTPUT_PATH, create_workspace
 
 Scenario = Literal["benign", "attack"]
@@ -161,8 +161,11 @@ class RunService:
         exposed = bool(gateway.exposure_event_ids)
         if summary and any(v in summary for v in workspace.sensitive_values):
             exposed = True
-            for value in workspace.sensitive_values:
-                summary = summary.replace(value, REDACTED)
+        # Every string persisted on the run row passes through the same scrubber as events.
+        sensitive = workspace.sensitive_values
+        summary = redact_text(summary, sensitive)
+        provider_error = redact_text(provider_error, sensitive)
+        transcript = redact_obj(transcript, sensitive) if transcript is not None else None
         task_completed = bool(result and result.task_completed)
 
         run_result = {

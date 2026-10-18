@@ -34,6 +34,7 @@ EDGE_LABELS = {
     ("tool_result", "agent_note"): "agent response",
     ("policy_decision", "incident_opened"): "evidence for",
     ("incident_opened", "incident_annotation"): "annotated",
+    ("incident_opened", "ai_explanation"): "AI explanation",
 }
 
 
@@ -66,7 +67,8 @@ def _short_label(e: dict[str, Any]) -> str:
         return f"Result: {e['outcome']}" + (" - instruction-like text" if flagged else "")
     return {"run_started": "Run started", "task_received": "Task received", "incident_opened": "Incident recorded",
             "sensitive_data_exposed": "Sensitive data exposed", "agent_note": "Agent note",
-            "incident_annotation": "Analyst note", "run_completed": "Run completed"}.get(t, t)
+            "incident_annotation": "Analyst note", "run_completed": "Run completed",
+            "ai_explanation": "AI explanation", "tool_call_rejected": "Invalid tool call rejected"}.get(t, t)
 
 
 class Investigator:

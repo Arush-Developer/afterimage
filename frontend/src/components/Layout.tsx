@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import {
-  Activity, Archive, FlaskConical, LayoutDashboard, ListTree, Menu, Network, Settings, Shield, ShieldAlert, X,
+  Activity, Archive, FlaskConical, LayoutDashboard, ListTree, Menu, Network, Settings, Shield, ShieldAlert, Syringe, X,
 } from "lucide-react";
 import { api } from "../api";
 import { cx } from "./ui";
@@ -11,6 +11,7 @@ const NAV = [
   { to: "/incidents", label: "Incidents", icon: ShieldAlert },
   { to: "/investigation", label: "Investigation", icon: Network },
   { to: "/replay", label: "Replay Lab", icon: FlaskConical },
+  { to: "/experiment", label: "Injection Lab", icon: Syringe },
   { to: "/policies", label: "Policies", icon: Shield },
   { to: "/recovery", label: "Recovery Vault", icon: Archive },
   { to: "/events", label: "Event Explorer", icon: ListTree },

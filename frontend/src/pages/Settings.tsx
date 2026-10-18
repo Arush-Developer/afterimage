@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Cloud, Database, FlaskRound, RotateCcw, Trash2 } from "lucide-react";
+import { Cloud, Cpu, Database, FlaskRound, RotateCcw, Trash2 } from "lucide-react";
 import { api } from "../api";
 import { formatBytes } from "../format";
 import { useAction, useApi } from "../hooks";
@@ -49,7 +49,7 @@ export function Settings() {
         <Card title={<span className="flex items-center gap-2"><FlaskRound className="size-4 text-accent-400" aria-hidden />Demo environment</span>}>
           <KeyValue items={[
             ["Data", s.demo_environment.synthetic_only ? "Synthetic only (fictional project, fake secret)" : "—"],
-            ["Agent / LLM", s.demo_environment.llm],
+            ["Scripted agent", s.demo_environment.scripted_agent],
             ["Scenarios", s.demo_environment.scenarios.join(", ")],
             ["Run workspaces on disk", s.demo_environment.run_workspaces],
             ["Vault files", s.demo_environment.vault_files.map((f) => <Mono key={f} className="mr-1">{f}</Mono>)],
@@ -58,6 +58,40 @@ export function Settings() {
           ]} />
         </Card>
       </div>
+
+      <Card title={<span className="flex items-center gap-2"><Cpu className="size-4 text-accent-400" aria-hidden />LLM agent configuration</span>}
+        subtitle={s.llm.note}>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <KeyValue items={[
+            ["Default provider", <Mono>{s.llm.default_provider}</Mono>],
+            ["Default model", s.llm.default_model ? <Mono>{s.llm.default_model}</Mono> : <span className="text-ink-400">provider default</span>],
+            ["Effort", s.llm.effort || "default"],
+            ["Max agent steps", s.llm.max_steps],
+            ["Max tokens / step", s.llm.max_tokens],
+            ["Request timeout", `${s.llm.timeout_s}s`],
+            ["Max experiment trials", s.llm.max_trials],
+          ]} />
+          <div>
+            <div className="mb-2 text-xs font-medium text-ink-400">Provider status (credentials never shown)</div>
+            <ul className="space-y-2">
+              {s.llm.providers.map((p) => (
+                <li key={p.provider} className="rounded-lg border border-ink-700 p-3 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium">{p.label}</span>
+                    {p.configured
+                      ? <Badge tone="good">configured</Badge>
+                      : <Badge tone="neutral">not configured</Badge>}
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-ink-400">
+                    {p.real ? <Badge tone="accent">real model</Badge> : <Badge tone="warn">simulated</Badge>}
+                    <span>{p.detail}</span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </Card>
 
       <Card title={<span className="flex items-center gap-2"><Cloud className="size-4 text-ink-400" aria-hidden />Cloud sync</span>}>
         <div className="flex flex-wrap items-center gap-3 text-sm"><Badge>{s.cloud_sync.status.replace("_", " ")}</Badge><span className="text-ink-300">{s.cloud_sync.detail}</span></div>

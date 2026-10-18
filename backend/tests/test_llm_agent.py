@@ -135,3 +135,39 @@ def test_max_steps_is_bounded(harness):
     gw, agent = build(allow_all_engine(0), lambda step, turns: _call("list_files", path="."))
     outcome = agent.run()
     assert outcome.steps == 8 and outcome.stop_reason == "max_steps"
+
+
+def test_hex_only_leak_is_detected_and_redacted(harness):
+    build, db, ws = harness
+    token = ws.canary.rsplit("-", 1)[-1]
+    gw, agent = build(allow_all_engine(0), [LLMResponse(f"the value is {token}", [], "end_turn", TokenUsage())])
+    outcome = agent.run()
+    assert token not in (outcome.result.summary or "")
+    assert token not in "\n".join(db._conn.iterdump())
+
+
+def test_log_records_are_scrubbed(caplog):
+    import logging
+    from afterimage.recorder import RedactingLogFilter
+    logger = logging.getLogger("afterimage.test")
+    logger.addFilter(RedactingLogFilter())
+    with caplog.at_level(logging.INFO, logger="afterimage.test"):
+        logger.info("leaked %s", "AFTERIMAGE-CANARY-00112233445566778899aabb")
+    assert "AFTERIMAGE-CANARY-0011" not in caplog.text and "[REDACTED" in caplog.text
+
+
+def test_provider_error_text_is_redacted_on_the_run_row(client, monkeypatch, settings):
+    """A provider error message that (hypothetically) echoed the canary is scrubbed before storage."""
+    import afterimage.runs as runs_module
+    from afterimage.providers import ProviderUnavailableError
+
+    class EchoingProvider:
+        name, model, is_real = "mock", "echo", False
+
+        def complete(self, **kwargs):
+            raise ProviderUnavailableError("upstream said AFTERIMAGE-CANARY-aaaaaaaaaaaaaaaaaaaaaaaa", kind="api_error")
+
+    monkeypatch.setattr(runs_module, "build_provider", lambda *a, **k: EchoingProvider())
+    run = client.post("/api/runs/llm", json={"provider": "simulated"}).json()
+    assert run["status"] == "failed" and run["provider_error"]
+    assert "AFTERIMAGE-CANARY-aaaa" not in run["provider_error"]

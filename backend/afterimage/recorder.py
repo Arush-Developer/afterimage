@@ -12,6 +12,7 @@ rewrite the entire chain consistently. There is no external anchor or signature.
 from __future__ import annotations
 
 import hashlib
+import re
 from typing import Any, Iterable
 
 from .common import new_id, utc_now
@@ -29,19 +30,49 @@ HASHED_FIELDS = (
 SEVERITIES = ("info", "low", "medium", "high", "critical")
 
 
+# Pattern-based scrub applied to EVERY persisted string, even when the caller passes no
+# sensitive values: the synthetic canary format and the fake-secret header line.
+_ALWAYS_REDACT = re.compile(r"AFTERIMAGE-CANARY-[0-9a-f]{8,}|SYNTHETIC DEMO SECRET - NOT A REAL CREDENTIAL")
+
+
 def _redact(value: Any, sensitive: tuple[str, ...]) -> Any:
-    if not sensitive:
-        return value
     if isinstance(value, str):
         for secret in sensitive:
             if secret and secret in value:
                 value = value.replace(secret, REDACTED)
-        return value
+        return _ALWAYS_REDACT.sub(REDACTED, value)
     if isinstance(value, dict):
         return {k: _redact(v, sensitive) for k, v in value.items()}
+    if value is None or isinstance(value, (int, float, bool)):
+        return value
     if isinstance(value, (list, tuple)):
         return [_redact(v, sensitive) for v in value]
     return value
+
+
+def redact_text(value: str | None, sensitive_values: Iterable[str] = ()) -> str | None:
+    """Scrub sensitive values and the canary pattern from a string (for any persisted text)."""
+    if value is None:
+        return None
+    return _redact(value, tuple(v for v in sensitive_values if v))
+
+
+def redact_obj(value: Any, sensitive_values: Iterable[str] = ()) -> Any:
+    return _redact(value, tuple(v for v in sensitive_values if v))
+
+
+class RedactingLogFilter:
+    """logging.Filter that scrubs the canary pattern from log messages and arguments."""
+
+    def filter(self, record: Any) -> bool:
+        try:
+            message = record.getMessage()
+        except Exception:
+            return True
+        cleaned = _ALWAYS_REDACT.sub(REDACTED, message)
+        if cleaned != message:
+            record.msg, record.args = cleaned, None
+        return True
 
 
 def compute_event_hash(row: dict[str, Any]) -> str:

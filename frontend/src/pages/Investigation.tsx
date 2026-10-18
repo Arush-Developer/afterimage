@@ -4,6 +4,7 @@ import { ArrowRight, Eye, FlaskConical, HelpCircle, Lightbulb, MessageSquarePlus
 import { api, type AfterEvent, type GraphNode } from "../api";
 import { formatClock, formatTime, humanize } from "../format";
 import { useAction, useApi } from "../hooks";
+import { AiExplanationCard } from "../components/AiExplanationCard";
 import { EventGraph, GraphLegend } from "../components/EventGraph";
 import {
   Badge, Button, Card, CategoryBadge, EmptyState, ErrorState, InlineError, KeyValue, Loading, Mono, OutcomeTag,
@@ -199,6 +200,8 @@ function IncidentWorkspace({ incidentId, incidentIds }: { incidentId: string; in
           <Card title={<span className="flex items-center gap-2"><HelpCircle className="size-4 text-amber-300" aria-hidden />Uncertainty & missing evidence</span>}>
             <ul className="list-disc space-y-1.5 pl-5 text-sm text-ink-300">{r.uncertainties.map((u, i) => <li key={i}>{u}</li>)}</ul>
           </Card>
+
+          <AiExplanationCard incidentId={inc.incident_id} onSelect={setSelected} />
 
           <AnnotationForm incidentId={inc.incident_id} onSaved={() => { void events.reload(); void report.reload(); }} />
         </div>

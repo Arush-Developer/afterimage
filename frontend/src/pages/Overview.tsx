@@ -1,14 +1,14 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
-  ArrowRight, Ban, CheckCircle2, Cloud, Database, FlaskConical, Play, PlayCircle, ShieldAlert, ShieldCheck, Swords,
+  ArrowRight, Ban, CheckCircle2, Cloud, Database, FlaskConical, Play, PlayCircle, ShieldAlert, ShieldCheck, Swords, Syringe,
 } from "lucide-react";
 import { api, type Run } from "../api";
 import { relativeTime } from "../format";
 import { useAction, useApi } from "../hooks";
 import {
-  Badge, Button, Card, EmptyState, ErrorState, InlineError, Loading, Mono, PageHeader, PassFail, SeverityBadge,
-  SimulatedNotice, StatTile, cx,
+  Badge, Button, Card, EmptyState, ErrorState, InlineError, Loading, Mono, PageHeader, PassFail, RunKindBadge,
+  SeverityBadge, SimulatedNotice, StatTile, cx,
 } from "../components/ui";
 
 export function RunOutcome({ run }: { run: Run }) {
@@ -53,6 +53,7 @@ export function Overview() {
           <Button onClick={() => go("benign")} pending={start.pending && which === "benign"} disabled={start.pending} icon={<PlayCircle className="size-4" />}>Run Safe Scenario</Button>
           <Button variant="danger" onClick={() => go("attack")} pending={start.pending && which === "attack"} disabled={start.pending} icon={<Swords className="size-4" />}>Simulate Attack</Button>
           <Button variant="primary" onClick={() => navigate("/replay")} icon={<FlaskConical className="size-4" />}>Open Replay Lab</Button>
+          <Button variant="primary" onClick={() => navigate("/experiment")} icon={<Syringe className="size-4" />}>Injection Lab (LLM)</Button>
         </>}
       />
       <InlineError message={start.error} onDismiss={start.clearError} />
@@ -146,14 +147,15 @@ export function Overview() {
               <div className="scroll-thin overflow-x-auto">
                 <table className="w-full min-w-[720px] text-sm">
                   <thead className="text-left text-xs text-ink-400">
-                    <tr className="border-b border-ink-800"><th className="px-5 py-2 font-medium">Run</th><th className="font-medium">Scenario</th><th className="font-medium">Policy</th><th className="font-medium">Task</th><th className="font-medium">Denied</th><th className="font-medium">Exposed</th><th className="font-medium">Started</th></tr>
+                    <tr className="border-b border-ink-800"><th className="px-5 py-2 font-medium">Run</th><th className="font-medium">Scenario</th><th className="font-medium">Agent</th><th className="font-medium">Policy</th><th className="font-medium">Task</th><th className="font-medium">Denied</th><th className="font-medium">Exposed</th><th className="font-medium">Started</th></tr>
                   </thead>
                   <tbody className="divide-y divide-ink-800">
                     {d.recent_runs.map((r) => (
                       <tr key={r.run_id} className="hover:bg-ink-850">
                         <td className="px-5 py-2.5"><Link className="font-mono text-xs text-accent-300 hover:underline" to={`/events?run_id=${r.run_id}`}>{r.run_id}</Link></td>
-                        <td>{r.scenario_title}{r.kind === "replay" && <Badge className="ml-2" tone="accent">replay</Badge>}</td>
-                        <td className="tabular-nums">v{r.policy_version}</td>
+                        <td>{r.scenario_title}{r.kind === "replay" && <Badge className="ml-2" tone="accent">replay</Badge>}{r.enforcement === "baseline" && <Badge className="ml-2" tone="bad">baseline</Badge>}</td>
+                        <td><RunKindBadge run={r} /></td>
+                        <td className="tabular-nums">{r.enforcement === "baseline" ? "—" : `v${r.policy_version}`}</td>
                         <td><PassFail passed={!!r.task_completed} label={r.task_completed ? "done" : "failed"} /></td>
                         <td className="tabular-nums">{r.result?.denied_calls ?? 0}</td>
                         <td><PassFail passed={!r.sensitive_exposed} label={r.sensitive_exposed ? "yes" : "no"} /></td>
