@@ -30,6 +30,8 @@ from .policy import CHANGE_CATALOG
 from .policy_store import PolicyStore
 from .recorder import EventRecorder, deserialize_event
 from .recovery import VAULT_FILES, RecoveryVault
+from .experiment import ExperimentService
+from .providers import PROVIDERS, ProviderConfigError, ProviderError as LLMProviderError, provider_status
 from .replay import ReplayService
 from .runs import SCENARIOS, RunService
 
@@ -39,6 +41,7 @@ RUN_ID = Path(pattern=r"^run_[0-9a-f]{16}$")
 INC_ID = Path(pattern=r"^inc_[0-9a-f]{16}$")
 RPL_ID = Path(pattern=r"^rpl_[0-9a-f]{16}$")
 SNP_ID = Path(pattern=r"^snp_[0-9a-f]{16}$")
+EXP_ID = Path(pattern=r"^exp_[0-9a-f]{16}$")
 IDEMPOTENCY_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 RESET_PHRASE = "ARCHIVE AND RESET"
 
@@ -46,6 +49,18 @@ ChangeId = Literal["restrict-read-scope", "deny-secret-class", "require-approval
 
 
 # -- request bodies -------------------------------------------------------------
+class LLMRunRequest(BaseModel):
+    provider: Literal["anthropic", "ollama", "simulated"] | None = None
+    model: str | None = Field(default=None, pattern=r"^[A-Za-z0-9._:/-]{1,100}$")
+    enforcement: Literal["protected", "baseline"] = "protected"
+
+
+class ExperimentRequest(BaseModel):
+    provider: Literal["anthropic", "ollama", "simulated"] | None = None
+    model: str | None = Field(default=None, pattern=r"^[A-Za-z0-9._:/-]{1,100}$")
+    trials: int = Field(default=1, ge=1, le=20)
+
+
 class PolicyPreviewRequest(BaseModel):
     change_ids: list[ChangeId] = Field(min_length=1, max_length=4)
 
@@ -109,6 +124,7 @@ class AppContext:
         self.runs = RunService(s, self.db, self.recorder, self.policies)
         self.investigator = Investigator(self.db, self.recorder, self.policies)
         self.replays = ReplayService(self.db, self.runs, self.investigator)
+        self.experiments = ExperimentService(self.db, self.runs, s)
         self.vault = RecoveryVault(s.vault_dir, self.db, self.recorder)
         self.vault.ensure()
 
@@ -177,6 +193,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def _handle_known(_: Request, exc: AfterimageError) -> JSONResponse:
         return JSONResponse(status_code=exc.status_code, content={"detail": exc.message, "code": exc.code})
 
+    @app.exception_handler(LLMProviderError)
+    async def _handle_provider(_: Request, exc: LLMProviderError) -> JSONResponse:
+        # Config/credential/model problems are the caller's to fix (400); transient
+        # provider problems (timeout, rate limit, 5xx) are 503. The message is safe to
+        # surface and never contains key material.
+        status = 400 if isinstance(exc, ProviderConfigError) else (503 if exc.retryable else 502)
+        return JSONResponse(status_code=status, content={"detail": exc.message, "code": f"provider_{exc.kind}"})
+
     @app.exception_handler(Exception)
     async def _handle_unknown(_: Request, exc: Exception) -> JSONResponse:
         log.exception("unhandled error")
@@ -228,7 +252,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "verified_replays": db.scalar("SELECT COUNT(*) FROM replays WHERE verified = 1"),
                 "replays": db.scalar("SELECT COUNT(*) FROM replays"),
                 "events": db.scalar("SELECT COUNT(*) FROM events"),
+                "llm_runs": db.scalar("SELECT COUNT(*) FROM runs WHERE agent_kind = 'llm'"),
+                "experiments": db.scalar("SELECT COUNT(*) FROM experiments"),
+                "experiments_protected": db.scalar("SELECT COUNT(*) FROM experiments WHERE status = 'protected'"),
             },
+            "recent_experiments": c.experiments.list()[:5],
             "recent_incidents": c.investigator.list()[:5],
             "recent_runs": c.runs.list(limit=6),
             "policy": {"version": policy["version"], "name": policy["document"]["name"],
@@ -262,6 +290,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def run_attack(idempotency_key: str | None = Header(default=None), c: AppContext = Depends(ctx)) -> JSONResponse:
         return idempotent(c, idempotency_key, "runs/attack", lambda: _start_run(c, "attack"), 201)
 
+    def _start_llm_run(c: AppContext, body: "LLMRunRequest") -> dict[str, Any]:
+        run = c.runs.execute(scenario="llm", agent_kind="llm", enforcement=body.enforcement,
+                             provider=body.provider, model=body.model)
+        c.investigator.detect(run["run_id"])
+        return c.runs.get(run["run_id"])
+
+    @app.post("/api/runs/llm", status_code=201)
+    def run_llm(body: LLMRunRequest, idempotency_key: str | None = Header(default=None),
+                c: AppContext = Depends(ctx)) -> JSONResponse:
+        return idempotent(c, idempotency_key, "runs/llm", lambda: _start_llm_run(c, body), 201)
+
+    @app.get("/api/providers")
+    def providers(c: AppContext = Depends(ctx)) -> dict[str, Any]:
+        from .providers import DEFAULT_MODELS, provider_status
+        return {"providers": provider_status(c.settings), "default_provider": c.settings.llm_provider,
+                "default_models": DEFAULT_MODELS, "configured_model": c.settings.llm_model,
+                "max_trials": c.settings.llm_max_trials, "max_steps": c.settings.llm_max_steps}
+
     @app.get("/api/runs/{run_id}")
     def get_run(run_id: str = RUN_ID, c: AppContext = Depends(ctx)) -> dict[str, Any]:
         return c.runs.get(run_id)
@@ -269,6 +315,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/runs/{run_id}/events")
     def run_events(run_id: str = RUN_ID, c: AppContext = Depends(ctx)) -> list[dict[str, Any]]:
         return c.runs.events(run_id)
+
+    @app.get("/api/runs/{run_id}/transcript")
+    def run_transcript(run_id: str = RUN_ID, c: AppContext = Depends(ctx)) -> dict[str, Any]:
+        return {"run_id": run_id, "transcript": c.runs.transcript(run_id)}
+
+    # -- prompt-injection experiment -----------------------------------------------------
+    @app.get("/api/experiments")
+    def list_experiments(c: AppContext = Depends(ctx)) -> list[dict[str, Any]]:
+        return c.experiments.list()
+
+    @app.post("/api/experiments", status_code=201)
+    def create_experiment(body: ExperimentRequest, idempotency_key: str | None = Header(default=None),
+                          c: AppContext = Depends(ctx)) -> JSONResponse:
+        return idempotent(c, idempotency_key, "experiments",
+                          lambda: c.experiments.create(body.provider, body.model, body.trials), 201)
+
+    @app.get("/api/experiments/{experiment_id}")
+    def get_experiment(experiment_id: str = EXP_ID, c: AppContext = Depends(ctx)) -> dict[str, Any]:
+        return c.experiments.get(experiment_id)
 
     # -- incidents ------------------------------------------------------------------
     @app.get("/api/incidents")
@@ -418,7 +483,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "demo_environment": {"synthetic_only": True, "vault_files": list(VAULT_FILES),
                                  "scenarios": list(SCENARIOS), "policy_changes": list(CHANGE_CATALOG),
                                  "run_workspaces": sum(1 for p in s.workspaces_dir.iterdir() if p.is_dir()),
-                                 "llm": "none - the demo agent is deterministic"},
+                                 "scripted_agent": "deterministic, no LLM (used for regression tests)"},
+            "llm": {"default_provider": s.llm_provider, "default_model": s.llm_model,
+                    "effort": s.llm_effort, "max_steps": s.llm_max_steps, "max_tokens": s.llm_max_tokens,
+                    "timeout_s": s.llm_timeout_s, "max_trials": s.llm_max_trials,
+                    "providers": provider_status(s),
+                    "note": "Credentials live only in the backend environment and are never returned by the API."},
             "cors_origins": s.cors_origins,
             "cloud_sync": {"status": "not_configured",
                            "detail": "Optional Supabase sync is not implemented in this prototype. All data stays local."},

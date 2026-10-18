@@ -7,8 +7,8 @@ import re
 import secrets
 from datetime import datetime, timezone
 
-ID_PREFIXES = ("run", "evt", "dec", "inc", "rpl", "snp")
-ID_PATTERN = r"^(run|evt|dec|inc|rpl|snp)_[0-9a-f]{16}$"
+ID_PREFIXES = ("run", "evt", "dec", "inc", "rpl", "snp", "exp")
+ID_PATTERN = r"^(run|evt|dec|inc|rpl|snp|exp)_[0-9a-f]{16}$"
 _ID_RE = re.compile(ID_PATTERN)
 
 

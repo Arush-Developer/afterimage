@@ -103,6 +103,9 @@ class ReplayService:
         baseline = self.runs.get(baseline_run_id)
         if baseline["status"] != "completed":
             raise ValidationFailure("baseline run has not completed successfully")
+        if baseline.get("agent_kind") == "llm":
+            raise ValidationFailure("LLM runs are replayed through the prompt-injection experiment "
+                                    "(baseline vs protected), not the scripted replay engine")
 
         replay_run = self.runs.execute(baseline["scenario"], kind="replay", replay_of=baseline_run_id)
         self.investigator.detect(replay_run["run_id"])

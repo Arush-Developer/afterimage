@@ -22,6 +22,16 @@ class Settings(BaseModel):
     cors_origins: list[str]
     max_read_bytes: int = Field(default=65536, ge=1024, le=1_048_576)
     cloud_sync: str = "disabled"
+    # LLM agent settings (no secrets here: credentials stay in the SDK's own env vars)
+    llm_provider: str = "anthropic"
+    llm_model: str | None = None
+    llm_effort: str = "medium"
+    llm_timeout_s: float = Field(default=120.0, ge=5, le=600)
+    llm_max_steps: int = Field(default=12, ge=1, le=40)
+    llm_max_tokens: int = Field(default=16000, ge=256, le=64000)
+    llm_max_trials: int = Field(default=5, ge=1, le=20)
+    ollama_host: str = "http://127.0.0.1:11434"
+    anthropic_base_url: str | None = None
 
     @field_validator("cors_origins")
     @classmethod
@@ -43,6 +53,35 @@ class Settings(BaseModel):
         if value != "disabled":
             raise ValueError("cloud sync is not implemented in this prototype; leave AFTERIMAGE_CLOUD_SYNC unset")
         return value
+
+    @field_validator("llm_provider")
+    @classmethod
+    def _validate_provider(cls, value: str) -> str:
+        if value not in ("anthropic", "ollama", "simulated"):
+            raise ValueError("AFTERIMAGE_LLM_PROVIDER must be anthropic, ollama or simulated")
+        return value
+
+    @field_validator("llm_effort")
+    @classmethod
+    def _validate_effort(cls, value: str) -> str:
+        if value not in ("", "low", "medium", "high", "xhigh", "max"):
+            raise ValueError("AFTERIMAGE_LLM_EFFORT must be empty or one of low, medium, high, xhigh, max")
+        return value
+
+    @field_validator("llm_model")
+    @classmethod
+    def _validate_model(cls, value: str | None) -> str | None:
+        import re
+        if value and not re.match(r"^[A-Za-z0-9._:/-]{1,100}$", value):
+            raise ValueError("AFTERIMAGE_LLM_MODEL contains invalid characters")
+        return value or None
+
+    @field_validator("ollama_host", "anthropic_base_url")
+    @classmethod
+    def _validate_url(cls, value: str | None) -> str | None:
+        if value and not value.startswith(("http://", "https://")):
+            raise ValueError("URLs must start with http:// or https://")
+        return value or None
 
     @property
     def db_path(self) -> Path:
@@ -90,4 +129,13 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         cors_origins=origins,
         max_read_bytes=int(env.get("AFTERIMAGE_MAX_READ_BYTES", "65536")),
         cloud_sync=env.get("AFTERIMAGE_CLOUD_SYNC", "disabled"),
+        llm_provider=env.get("AFTERIMAGE_LLM_PROVIDER", "anthropic"),
+        llm_model=env.get("AFTERIMAGE_LLM_MODEL") or None,
+        llm_effort=env.get("AFTERIMAGE_LLM_EFFORT", "medium"),
+        llm_timeout_s=float(env.get("AFTERIMAGE_LLM_TIMEOUT_S", "120")),
+        llm_max_steps=int(env.get("AFTERIMAGE_LLM_MAX_STEPS", "12")),
+        llm_max_tokens=int(env.get("AFTERIMAGE_LLM_MAX_TOKENS", "16000")),
+        llm_max_trials=int(env.get("AFTERIMAGE_LLM_MAX_TRIALS", "5")),
+        ollama_host=env.get("AFTERIMAGE_OLLAMA_HOST", "http://127.0.0.1:11434"),
+        anthropic_base_url=env.get("AFTERIMAGE_ANTHROPIC_BASE_URL") or None,
     )

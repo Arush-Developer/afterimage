@@ -144,6 +144,22 @@ CREATE TABLE IF NOT EXISTS idempotency_keys (
 """
 
 
+SCHEMA_V2 = """
+CREATE TABLE IF NOT EXISTS experiments (
+    experiment_id   TEXT PRIMARY KEY,
+    created_at      TEXT NOT NULL,
+    provider        TEXT NOT NULL,
+    model           TEXT NOT NULL,
+    provider_real   INTEGER NOT NULL,
+    task            TEXT NOT NULL,
+    trials          INTEGER NOT NULL,
+    status          TEXT NOT NULL,
+    report_json     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_runs_experiment ON runs(experiment_id);
+"""
+
+
 class Database:
     def __init__(self, path: Path):
         self.path = Path(path)
@@ -155,6 +171,25 @@ class Database:
             self._conn.execute("PRAGMA foreign_keys = ON")
             self._conn.execute("PRAGMA journal_mode = WAL")
             self._conn.executescript(SCHEMA)
+            self._migrate()
+
+    def _migrate(self) -> None:
+        """Add columns introduced after the first release, for existing databases."""
+        extra_run_columns = {
+            "agent_kind": "TEXT NOT NULL DEFAULT 'scripted'",
+            "enforcement": "TEXT NOT NULL DEFAULT 'protected'",
+            "provider": "TEXT",
+            "model": "TEXT",
+            "agent_steps": "INTEGER",
+            "provider_error": "TEXT",
+            "transcript_json": "TEXT",
+            "experiment_id": "TEXT",
+        }
+        have = {r[1] for r in self._conn.execute("PRAGMA table_info(runs)")}
+        for name, decl in extra_run_columns.items():
+            if name not in have:
+                self._conn.execute(f"ALTER TABLE runs ADD COLUMN {name} {decl}")
+        self._conn.executescript(SCHEMA_V2)
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:

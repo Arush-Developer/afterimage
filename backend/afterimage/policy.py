@@ -158,6 +158,24 @@ class PolicyEngine:
         return decide(False, DEFAULT_DENY_RULE, "No rule allows this request (default deny).", matched_ids or [DEFAULT_DENY_RULE])
 
 
+ALLOW_ALL_POLICY = PolicyDocument(
+    name="Baseline (enforcement disabled)",
+    disabled_tools=[],
+    rules=[
+        Rule(rule_id="BASELINE-ALLOW-ALL", effect="allow", actions=["list_files", "read_file", "write_file"],
+             resources=[".", "**"],
+             description="Enforcement disabled: all workspace tool calls are allowed (disposable demo only)."),
+    ],
+)
+
+
+def allow_all_engine(version: int = 0) -> "PolicyEngine":
+    """An engine that permits every in-workspace tool call. Used only for the isolated,
+    disposable baseline run of the prompt-injection experiment. The workspace-boundary
+    rule (AI-BOUNDARY-001) still applies, so paths outside the workspace are still denied."""
+    return PolicyEngine(ALLOW_ALL_POLICY, version)
+
+
 BASELINE_POLICY = PolicyDocument(
     name="Baseline demo policy",
     disabled_tools=[],
