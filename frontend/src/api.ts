@@ -365,6 +365,9 @@ export interface SettingsInfo {
     timeout_s: number;
     max_trials: number;
     providers: ProviderStatus[];
+    models: Record<string, string>;
+    ollama_host: string;
+    ollama_local_only: boolean;
     note: string;
   };
   cors_origins: string[];
@@ -393,13 +396,30 @@ export interface AiExplanation {
   created_at?: string;
 }
 
+export type ProviderName = "anthropic" | "gemini" | "ollama" | "simulated";
+
 export interface ProviderStatus {
-  provider: string;
+  provider: ProviderName;
   label: string;
   real: boolean;
+  local: boolean;
+  billing: string;
   configured: boolean;
   default_model: string;
   detail: string;
+}
+
+export interface ProviderCheck {
+  provider: ProviderName;
+  label: string;
+  model: string | null;
+  configured: boolean;
+  reachable: boolean;
+  model_available: boolean;
+  tool_calling: "supported" | "unsupported" | "unknown";
+  error_kind?: string;
+  detail: string;
+  checked_at: string;
 }
 
 export interface ProvidersResponse {
@@ -435,6 +455,7 @@ export interface TrialResult {
   exposure_event_ids: string[];
   rules_responsible: string[];
   provider_error: string | null;
+  provider_error_kind: string | null;
 }
 
 export interface TrialAggregate {
@@ -449,7 +470,8 @@ export interface TrialAggregate {
 }
 
 export interface ExperimentReport {
-  verdict: "protected" | "protection_failed" | "attack_not_reproduced";
+  verdict: "protected" | "protection_failed" | "attack_not_reproduced" | "inconclusive";
+  stopped_early?: string;
   headline: string;
   provider: string;
   model: string;
@@ -492,7 +514,7 @@ export interface ExperimentSummary {
 }
 
 export class ApiError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(public status: number, message: string, public code?: string, public retryAfterS?: number) {
     super(message);
   }
 }
@@ -521,11 +543,12 @@ async function request<T>(method: "GET" | "POST", path: string, body?: unknown):
     data = null;
   }
   if (!response.ok) {
-    const detail = (data as { detail?: unknown } | null)?.detail;
+    const body = data as { detail?: unknown; code?: string; retry_after_s?: number } | null;
+    const detail = body?.detail;
     const message = typeof detail === "string" ? detail
       : Array.isArray(detail) ? detail.map((d: { msg?: string }) => d.msg ?? "invalid").join("; ")
       : `Request failed (${response.status})`;
-    throw new ApiError(response.status, message);
+    throw new ApiError(response.status, message, body?.code, body?.retry_after_s);
   }
   return data as T;
 }
@@ -541,6 +564,8 @@ export const api = {
   runEvents: (id: string) => get<AfterEvent[]>(`/api/runs/${id}/events`),
   runTranscript: (id: string) => get<{ run_id: string; transcript: TranscriptEntry[] }>(`/api/runs/${id}/transcript`),
   providers: () => get<ProvidersResponse>("/api/providers"),
+  checkProvider: (provider: string, model?: string) =>
+    get<ProviderCheck>(`/api/providers/${provider}/check${model ? `?model=${encodeURIComponent(model)}` : ""}`),
   startLlmRun: (body: { provider?: string; model?: string | null; enforcement: "protected" | "baseline" }) =>
     post<Run>("/api/runs/llm", body),
   experiments: () => get<ExperimentSummary[]>("/api/experiments"),

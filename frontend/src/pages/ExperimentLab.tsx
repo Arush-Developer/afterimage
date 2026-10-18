@@ -7,14 +7,27 @@ import { useAction, useApi } from "../hooks";
 import { LiveProgress } from "../components/LiveProgress";
 import { ProviderPicker, type ProviderSelection } from "../components/ProviderPicker";
 import { CollapsibleTranscript } from "../components/Transcript";
+import { ProviderErrorNotice, ProviderWhereBadge } from "../providers";
 import {
   Badge, Button, Card, EmptyState, ErrorState, InlineError, Loading, Mono, PageHeader, PassFail, SimulatedNotice, cx,
 } from "../components/ui";
+
+/** One representative trial per distinct provider error kind. */
+function erroredTrials(report: ExperimentReport) {
+  const seen = new Set<string>();
+  return [...report.baseline_trials, ...report.protected_trials].filter((t) => {
+    const key = t.provider_error_kind ?? t.provider_error ?? "";
+    if (!t.provider_error || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
 
 function VerdictBanner({ report }: { report: ExperimentReport }) {
   const cfg = {
     protected: { icon: ShieldCheck, cls: "border-emerald-400/30 bg-emerald-500/10 text-emerald-100", title: "Protected" },
     attack_not_reproduced: { icon: AlertTriangle, cls: "border-amber-400/30 bg-amber-500/10 text-amber-100", title: "Attack not reproduced" },
+    inconclusive: { icon: AlertTriangle, cls: "border-amber-400/30 bg-amber-500/10 text-amber-100", title: "Inconclusive — no result" },
     protection_failed: { icon: ShieldX, cls: "border-rose-400/30 bg-rose-500/10 text-rose-100", title: "Protection failed" },
   }[report.verdict];
   const Icon = cfg.icon;
@@ -71,7 +84,7 @@ function TrialTable({ title, trials }: { title: string; trials: ExperimentReport
             <tr className="border-b border-ink-800">
               <th className="py-2 font-medium">Run</th><th className="font-medium">Requested</th>
               <th className="font-medium">Returned</th><th className="font-medium">Leaked</th>
-              <th className="font-medium">Task</th><th className="font-medium">Rules</th>
+              <th className="font-medium">Task</th><th className="font-medium">Rules / error</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-ink-800">
@@ -82,7 +95,9 @@ function TrialTable({ title, trials }: { title: string; trials: ExperimentReport
                 <td className={t.restricted_content_returned ? "text-rose-300" : ""}>{t.restricted_content_returned ? "YES" : "no"}</td>
                 <td className={t.secret_leaked ? "text-rose-300" : ""}>{t.secret_leaked ? "YES" : "no"}</td>
                 <td><PassFail passed={t.legitimate_task_completed} label={t.legitimate_task_completed ? "done" : "no"} /></td>
-                <td className="font-mono text-xs">{t.rules_responsible.join(", ") || "—"}</td>
+                <td className="font-mono text-xs">{t.provider_error
+                  ? <span className="font-sans text-amber-300">provider error: {(t.provider_error_kind ?? "error").replace(/_/g, " ")}</span>
+                  : t.rules_responsible.join(", ") || "—"}</td>
               </tr>
             ))}
           </tbody>
@@ -164,7 +179,9 @@ export function ExperimentLab() {
         {chosen && !chosen.configured && (
           <p className="mt-2 text-xs text-amber-200">{chosen.label} is not configured. {chosen.detail}</p>
         )}
-        <InlineError message={run.error} onDismiss={run.clearError} />
+        {run.error && (run.errorCode?.startsWith("provider_")
+          ? <ProviderErrorNotice message={run.error} code={run.errorCode} provider={selection.provider} retryAfterS={run.retryAfterS} />
+          : <InlineError message={run.error} onDismiss={run.clearError} />)}
       </Card>
 
       {current?.status === "running" && (
@@ -182,8 +199,12 @@ export function ExperimentLab() {
       {current && current.status !== "running" && current.status !== "error" && (
         <>
           <VerdictBanner report={current.report} />
+          {erroredTrials(current.report).map((t) => (
+            <ProviderErrorNotice key={t.provider_error_kind ?? t.provider_error} message={t.provider_error ?? ""}
+              code={t.provider_error_kind} provider={current.report.provider} />
+          ))}
           <Card title="Baseline vs protected"
-            subtitle={<>Provider <Mono>{current.report.provider}</Mono> · model <Mono>{current.report.model}</Mono> · {current.report.provider_real ? "real model" : "simulated agent"} · {current.report.trials} trial(s) each · {formatTime(current.created_at)}</>}>
+            subtitle={<span className="flex flex-wrap items-center gap-1.5">Provider <Mono>{current.report.provider}</Mono> · model <Mono>{current.report.model}</Mono> <ProviderWhereBadge provider={current.report.provider} /> · {current.report.trials} trial(s) requested · {formatTime(current.created_at)}</span>}>
             <div className="grid gap-4 md:grid-cols-2">
               <AggColumn title="Baseline" agg={current.report.baseline} tone="bad"
                 subtitle="Agent tools unguarded (no AFTERIMAGE policy)." />
