@@ -16,7 +16,9 @@ Everything runs locally and all data is synthetic. **No API key is needed** for 
 
 ## Quick start
 
-Requirements: **Python 3.11+** and **Node.js 20+** (tested with Python 3.13 and Node 22).
+Requirements: **Python 3.12+** (the pinned `networkx==3.7` requires it) and **Node.js 22.12+** (required by Vitest 5; tested with Python 3.13 and Node 22). Tested on Linux; macOS and Windows have not been tested by the project.
+
+> **New here?** Read the **[User Manual](docs/USER_MANUAL.md)**: installation on macOS and Windows, every page of the dashboard, a first-time tutorial, the demo script, troubleshooting and limitations. Teammates in a hurry: **[Quick start](docs/QUICK_START.md)**.
 
 ### 1. Backend (FastAPI, port 8000)
 
@@ -75,7 +77,7 @@ Open <http://localhost:5173>. Vite proxies `/api` to `http://127.0.0.1:8000` (ov
 ### 3. Tests
 
 ```bash
-# Backend: 135 pytest tests (+6 optional live-provider tests, skipped by default).
+# Backend: 137 pytest tests (+6 optional live-provider tests, skipped by default).
 # No network or API key needed: local mock HTTP servers stand in for the Anthropic and
 # Gemini APIs (exercising the real official SDKs) and for a local Ollama server.
 cd backend && .venv/bin/pytest -q
@@ -155,7 +157,7 @@ backend/
     replay.py         replay engine (scripted, or LLM trials + deterministic control), assertions, diffs
     recovery.py       snapshot vault with content hashes and verified restore
     main.py           FastAPI app, REST endpoints, idempotency, CORS, resets
-  tests/              pytest suite (135 tests + 6 optional live-provider tests)
+  tests/              pytest suite (137 tests + 6 optional live-provider tests)
 frontend/
   src/api.ts          typed API client
   src/pages/          Overview, Incidents, Investigation, Replay Lab, Injection Lab,
@@ -168,6 +170,8 @@ docs/                 architecture, API, security, demo script
 
 ## Documentation
 
+- **[User Manual](docs/USER_MANUAL.md)**: complete step-by-step guide (start here)
+- [Quick start](docs/QUICK_START.md): short setup guide for teammates
 - [Architecture & module guide](docs/ARCHITECTURE.md) — how the pieces fit, explained for beginners
 - [API reference](docs/API.md)
 - [Security model & limitations](docs/SECURITY.md)
@@ -175,7 +179,7 @@ docs/                 architecture, API, security, demo script
 
 ## Configuration
 
-All settings are optional; see [`.env.example`](.env.example). Put them in `backend/.env` or export them.
+All settings are optional; see [`.env.example`](.env.example). Put `AFTERIMAGE_*` settings in `backend/.env` (e.g. `cp .env.example backend/.env`) or export them. API keys are read from the process environment only.
 
 | Variable | Default | Meaning |
 |---|---|---|

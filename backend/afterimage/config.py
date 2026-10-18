@@ -7,6 +7,7 @@ directory it is read first, but real environment variables always take precedenc
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from typing import Mapping
 
@@ -151,7 +152,12 @@ def _read_dotenv(path: Path) -> dict[str, str]:
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, _, value = line.partition("=")
-        values[key.strip()] = value.strip().strip('"').strip("'")
+        value = value.strip()
+        if value[:1] in ('"', "'") and value[1:].find(value[0]) >= 0:
+            value = value[1:1 + value[1:].find(value[0])]  # quoted value: keep '#' inside quotes
+        else:
+            value = re.split(r"\s+#", value, maxsplit=1)[0].strip()  # drop inline " # comment"
+        values[key.strip()] = value
     return values
 
 
