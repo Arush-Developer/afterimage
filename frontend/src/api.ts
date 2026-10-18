@@ -472,9 +472,13 @@ export interface Experiment {
   model: string;
   provider_real: boolean;
   trials: number;
-  status: string;
+  status: string; // "running" | "error" | verdict
   task: string;
-  report: ExperimentReport;
+  report: ExperimentReport & { error?: string };
+  progress: {
+    total_runs: number;
+    runs: { run_id: string; enforcement: "baseline" | "protected"; status: string; started_at: string; completed_at: string | null }[];
+  };
 }
 
 export interface ExperimentSummary {
@@ -541,7 +545,7 @@ export const api = {
     post<Run>("/api/runs/llm", body),
   experiments: () => get<ExperimentSummary[]>("/api/experiments"),
   experiment: (id: string) => get<Experiment>(`/api/experiments/${id}`),
-  createExperiment: (body: { provider?: string; model?: string | null; trials: number }) =>
+  createExperiment: (body: { provider?: string; model?: string | null; trials: number; background?: boolean }) =>
     post<Experiment>("/api/experiments", body),
   startRun: (scenario: "benign" | "attack") => post<Run>(`/api/runs/${scenario}`),
   incidents: () => get<Incident[]>("/api/incidents"),

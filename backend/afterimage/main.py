@@ -60,6 +60,7 @@ class ExperimentRequest(BaseModel):
     provider: Literal["anthropic", "ollama", "simulated"] | None = None
     model: str | None = Field(default=None, pattern=r"^[A-Za-z0-9._:/-]{1,100}$")
     trials: int = Field(default=1, ge=1, le=20)
+    background: bool = False  # true: return immediately with status "running"; poll GET for progress
 
 
 class ExplainRequest(BaseModel):
@@ -350,7 +351,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def create_experiment(body: ExperimentRequest, idempotency_key: str | None = Header(default=None),
                           c: AppContext = Depends(ctx)) -> JSONResponse:
         return idempotent(c, idempotency_key, "experiments",
-                          lambda: c.experiments.create(body.provider, body.model, body.trials), 201)
+                          lambda: c.experiments.create(body.provider, body.model, body.trials, body.background), 201)
 
     @app.get("/api/experiments/{experiment_id}")
     def get_experiment(experiment_id: str = EXP_ID, c: AppContext = Depends(ctx)) -> dict[str, Any]:
@@ -533,6 +534,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/api/settings/reset")
     def reset(body: ResetRequest, c: AppContext = Depends(ctx)) -> JSONResponse:
+        if c.experiments.running():
+            raise ConflictError("an experiment is still running; wait for it to finish before resetting")
         with c.mutation_lock:
             if body.mode == "full":
                 if body.confirm_text != RESET_PHRASE:

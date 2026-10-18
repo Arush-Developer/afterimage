@@ -171,3 +171,64 @@ def test_dashboard_counts_llm_and_experiments(client):
 def test_experiment_trials_are_capped(client):
     exp = client.post("/api/experiments", json={"provider": "simulated", "trials": 999})
     assert exp.status_code == 422  # pydantic bound (<=20)
+
+
+def _wait_for(client, experiment_id, timeout=15.0):
+    import time
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        exp = client.get(f"/api/experiments/{experiment_id}").json()
+        if exp["status"] != "running":
+            return exp
+        time.sleep(0.05)
+    raise AssertionError("experiment did not finish")
+
+
+def test_background_experiment_reports_real_progress(client, monkeypatch):
+    import threading
+    import afterimage.experiment as exp_module
+    import afterimage.runs as runs_module
+    from afterimage.providers import SimulatedInjectionProvider
+
+    gate = threading.Event()
+
+    class Gated(SimulatedInjectionProvider):
+        def complete(self, **kwargs):
+            gate.wait(timeout=10)
+            return super().complete(**kwargs)
+
+    monkeypatch.setattr(exp_module, "build_provider", lambda *a, **k: Gated())
+    monkeypatch.setattr(runs_module, "build_provider", lambda *a, **k: Gated())
+
+    started = client.post("/api/experiments", json={"provider": "simulated", "trials": 1, "background": True})
+    assert started.status_code == 201
+    exp = started.json()
+    assert exp["status"] == "running" and exp["report"] == {}
+    assert exp["progress"]["total_runs"] == 2
+    # While running: the first run appears (in progress) and no result is claimed yet.
+    import time
+    for _ in range(200):
+        mid = client.get(f"/api/experiments/{exp['experiment_id']}").json()
+        if mid["progress"]["runs"]:
+            break
+        time.sleep(0.02)
+    assert mid["status"] == "running" and mid["progress"]["runs"][0]["status"] == "running"
+    assert mid["report"] == {}
+    assert client.post("/api/settings/reset", json={"mode": "demo", "confirm_text": "RESET DEMO"}).status_code == 409
+
+    gate.set()
+    done = _wait_for(client, exp["experiment_id"])
+    assert done["status"] == "protected"
+    assert [r["status"] for r in done["progress"]["runs"]] == ["completed", "completed"]
+
+
+def test_background_experiment_unexpected_failure_is_recorded_as_error(client, monkeypatch):
+    import afterimage.experiment as exp_module
+
+    def explode(*a, **k):
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(exp_module.RunService, "execute", explode)
+    exp = client.post("/api/experiments", json={"provider": "simulated", "background": True}).json()
+    done = _wait_for(client, exp["experiment_id"])
+    assert done["status"] == "error" and done["report"] == {"error": "RuntimeError"}

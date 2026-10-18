@@ -2,3 +2,5 @@ fastapi==0.143.5
 uvicorn==0.54.0
 pydantic==2.14.1
 networkx==3.7
+# Official Anthropic SDK (Claude provider). Also installs httpx2, used by the Ollama adapter.
+anthropic==1.15.0

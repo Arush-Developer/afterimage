@@ -73,10 +73,14 @@ class RunService:
     def execute(self, scenario: str = "attack", kind: str = "scenario", replay_of: str | None = None,
                 *, agent_kind: AgentKind = "scripted", enforcement: Enforcement = "protected",
                 provider: str | None = None, model: str | None = None,
-                experiment_id: str | None = None) -> dict[str, Any]:
+                experiment_id: str | None = None, wait: bool = False) -> dict[str, Any]:
+        """Run one agent. Interactive callers fail fast (409) if a run is in progress;
+        background jobs pass wait=True to queue behind it."""
         spec = RunSpec(scenario=scenario, kind=kind, agent_kind=agent_kind, enforcement=enforcement,
                        provider=provider, model=model, replay_of=replay_of, experiment_id=experiment_id)
-        if not self._run_lock.acquire(blocking=False):
+        acquired = self._run_lock.acquire(timeout=self.settings.llm_timeout_s * 4) if wait \
+            else self._run_lock.acquire(blocking=False)
+        if not acquired:
             raise ConflictError("another run is already in progress; wait for it to finish")
         try:
             return self._execute(spec)

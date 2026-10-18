@@ -4,6 +4,7 @@ import { AlertTriangle, FlaskConical, ShieldCheck, ShieldX } from "lucide-react"
 import { api, type Experiment, type ExperimentReport, type TrialAggregate } from "../api";
 import { formatTime, relativeTime } from "../format";
 import { useAction, useApi } from "../hooks";
+import { LiveProgress } from "../components/LiveProgress";
 import { ProviderPicker, type ProviderSelection } from "../components/ProviderPicker";
 import { CollapsibleTranscript } from "../components/Transcript";
 import {
@@ -113,11 +114,26 @@ export function ExperimentLab() {
 
   const run = useAction(async () => {
     if (!selection) return;
-    const result = await api.createExperiment({ provider: selection.provider, model: selection.model || null, trials });
+    const result = await api.createExperiment({ provider: selection.provider, model: selection.model || null, trials, background: true });
     setCurrent(result);
     setParams({ id: result.experiment_id }, { replace: true });
-    await list.reload();
   });
+
+  // Poll a running experiment until the backend reports a final status.
+  const runningId = current?.status === "running" ? current.experiment_id : undefined;
+  useEffect(() => {
+    if (!runningId) return;
+    let alive = true;
+    const timer = window.setInterval(() => {
+      api.experiment(runningId).then((next) => {
+        if (!alive) return;
+        setCurrent(next);
+        if (next.status !== "running") void list.reload();
+      }).catch(() => undefined);
+    }, 1000);
+    return () => { alive = false; window.clearInterval(timer); };
+  }, [runningId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const busy = run.pending || Boolean(runningId);
 
   if (providers.error) return <ErrorState message={providers.error} onRetry={providers.reload} />;
   if (!providers.data || !selection) return <Loading />;
@@ -130,19 +146,19 @@ export function ExperimentLab() {
       <SimulatedNotice>The baseline run disables policy enforcement on purpose, inside a disposable synthetic workspace, so the attack can be observed. No real system or data is involved, and the fake secret is never shown or stored.</SimulatedNotice>
 
       <Card title="Configure">
-        <ProviderPicker data={providers.data} value={selection} onChange={setSelection} disabled={run.pending} />
+        <ProviderPicker data={providers.data} value={selection} onChange={setSelection} disabled={busy} />
         <div className="mt-4 flex flex-wrap items-end justify-between gap-3">
           <label className="text-sm">
             <span className="mb-1 block text-xs font-medium text-ink-400">Trials per environment</span>
             <input type="number" min={1} max={providers.data.max_trials} value={trials}
               onChange={(e) => setTrials(Math.max(1, Math.min(providers.data!.max_trials, Number(e.target.value) || 1)))}
-              disabled={run.pending}
+              disabled={busy}
               className="w-24 rounded-lg border border-ink-700 bg-ink-900 px-3 py-2 text-sm" />
             <span className="ml-2 text-xs text-ink-500">real models vary between trials</span>
           </label>
-          <Button variant="primary" onClick={() => void run.run()} pending={run.pending}
+          <Button variant="primary" onClick={() => void run.run()} pending={busy}
             disabled={!chosen?.configured} icon={<FlaskConical className="size-4" />}>
-            {run.pending ? `Running ${trials * 2} isolated run(s)…` : "Run experiment"}
+            {busy ? "Experiment running…" : "Run experiment"}
           </Button>
         </div>
         {chosen && !chosen.configured && (
@@ -151,7 +167,19 @@ export function ExperimentLab() {
         <InlineError message={run.error} onDismiss={run.clearError} />
       </Card>
 
-      {current && (
+      {current?.status === "running" && (
+        <Card title="Live progress" subtitle="Updated from the backend every second; nothing is shown until it has been recorded.">
+          <LiveProgress experiment={current} />
+        </Card>
+      )}
+
+      {current?.status === "error" && (
+        <div role="alert" className="rounded-xl border border-rose-400/30 bg-rose-500/10 p-4 text-sm text-rose-100">
+          The experiment stopped with an error ({current.report.error ?? "unknown"}). No result is reported.
+        </div>
+      )}
+
+      {current && current.status !== "running" && current.status !== "error" && (
         <>
           <VerdictBanner report={current.report} />
           <Card title="Baseline vs protected"
@@ -192,7 +220,7 @@ export function ExperimentLab() {
             <li key={e.experiment_id}>
               <button onClick={() => { void api.experiment(e.experiment_id).then(setCurrent); setParams({ id: e.experiment_id }, { replace: true }); }}
                 className={cx("flex w-full flex-wrap items-center gap-3 px-5 py-3 text-left text-sm hover:bg-ink-850", current?.experiment_id === e.experiment_id && "bg-ink-850")}>
-                <Badge tone={e.status === "protected" ? "good" : e.status === "protection_failed" ? "bad" : "warn"}>{e.status.replace(/_/g, " ")}</Badge>
+                <Badge tone={e.status === "protected" ? "good" : e.status === "protection_failed" || e.status === "error" ? "bad" : e.status === "running" ? "accent" : "warn"}>{e.status.replace(/_/g, " ")}</Badge>
                 <span className="font-mono text-xs">{e.experiment_id}</span>
                 <span className="text-ink-400">{e.provider} · {e.model} · {e.trials}×2 runs {e.provider_real ? "" : "(simulated)"}</span>
                 <span className="ml-auto text-xs text-ink-400">{relativeTime(e.created_at)}</span>
