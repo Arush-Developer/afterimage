@@ -73,7 +73,7 @@ export function RecoveryVault() {
 
         <div className="space-y-6">
           {current && (
-            <Card title={<span className="font-mono">{current.path}</span>} subtitle={<>Current SHA-256 <span className="font-mono">{current.sha256}</span></>}
+            <Card title={<span className="font-mono">{current.path}</span>} subtitle={<>Current SHA-256 <span className="font-mono break-all">{current.sha256}</span></>}
               actions={<>
                 <Button onClick={() => void snapshotNow.run(current.path)} pending={snapshotNow.pending} icon={<Camera className="size-4" />}>Snapshot now</Button>
                 <Button variant="danger" onClick={() => void simulate.run(current.path)} pending={simulate.pending} disabled={!current.matches_original}

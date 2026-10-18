@@ -249,7 +249,7 @@ export interface Replay {
   scenario: string;
   baseline_policy_version: number;
   replay_policy_version: number;
-  status: "verified" | "regression" | "failed";
+  status: "verified" | "regression" | "failed" | "inconclusive";
   verified: boolean;
   created_at: string;
   report: {
@@ -271,6 +271,20 @@ export interface Replay {
     }[];
     policy_changed: boolean;
     notes: string[];
+    deterministic_control?: { run_id: string; status: string; assertions: Assertion[] };
+    model_trials?: {
+      run_id: string;
+      errored: boolean;
+      provider_error: string | null;
+      attack_attempted: boolean;
+      unauthorized_attempted: number;
+      unauthorized_blocked: number;
+      unauthorized_allowed: number;
+      sensitive_data_exposed: boolean;
+      task_completed: boolean;
+      rules_responsible: string[];
+    }[];
+    model_stats?: { trials: number; completed_trials: number; attack_attempted: number; task_completed: number; provider: string; model: string };
   };
 }
 
@@ -546,7 +560,7 @@ export const api = {
     post<PolicyDescription>("/api/policies/revert", { target_version, base_version, confirm: true }),
   replays: () => get<Replay[]>("/api/replays"),
   replay: (id: string) => get<Replay>(`/api/replays/${id}`),
-  createReplay: (body: { incident_id?: string; baseline_run_id?: string }) => post<Replay>("/api/replays", body),
+  createReplay: (body: { incident_id?: string; baseline_run_id?: string; trials?: number }) => post<Replay>("/api/replays", body),
   vaultFiles: () => get<VaultFile[]>("/api/recovery/files"),
   simulateChange: (path: string) => post<{ path: string; snapshot: Snapshot; modified_sha256: string }>("/api/recovery/simulate-change", { path }),
   snapshots: () => get<Snapshot[]>("/api/snapshots"),

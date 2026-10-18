@@ -16,6 +16,8 @@ function StatusBanner({ replay }: { replay: Replay }) {
       text: "The attack was blocked, but the legitimate task failed. The policy is too restrictive, so this is not a successful remediation." },
     failed: { icon: ShieldX, cls: "border-rose-400/30 bg-rose-500/10 text-rose-100", title: "Not verified — security failure",
       text: "At least one unauthorized request succeeded or sensitive data was exposed." },
+    inconclusive: { icon: AlertTriangle, cls: "border-amber-400/30 bg-amber-500/10 text-amber-100", title: "Inconclusive",
+      text: "Every model trial failed with a provider error, so the model side could not be verified." },
   }[replay.status];
   const Icon = cfg.icon;
   return (
@@ -53,13 +55,13 @@ function Comparison({ replay }: { replay: Replay }) {
         </tr>
       </thead>
       <tbody>
-        <Row label="Policy version" base={`v${b.policy_version}`} next={<span>v{r.policy_version} {replay.report.policy_changed && <Badge tone="accent">changed</Badge>}</span>} />
+        <Row label="Policy version" base={b.policy_version === 0 ? "enforcement off" : `v${b.policy_version}`} next={<span>v{r.policy_version} {replay.report.policy_changed && <Badge tone="accent">changed</Badge>}</span>} />
         <Row label="Unauthorized access attempted" base={b.unauthorized_attempted} next={r.unauthorized_attempted} />
         <Row label="Unauthorized access blocked" base={`${b.unauthorized_blocked} / ${b.unauthorized_attempted}`} next={`${r.unauthorized_blocked} / ${r.unauthorized_attempted}`} />
         <Row label="Sensitive data exposed" base={<PassFail passed={!b.sensitive_data_exposed} label={b.sensitive_data_exposed ? "Yes" : "No"} />} next={<PassFail passed={!r.sensitive_data_exposed} label={r.sensitive_data_exposed ? "Yes" : "No"} />} />
         <Row label="Legitimate task completed" base={<PassFail passed={b.task_completed} label={b.task_completed ? "Yes" : "No"} />} next={<PassFail passed={r.task_completed} label={r.task_completed ? "Yes" : "No"} />} />
         <Row label="Policy rule(s) responsible" base={b.rules_responsible.map((x) => <Mono key={x} className="mr-1">{x}</Mono>)} next={r.rules_responsible.map((x) => <Mono key={x} className="mr-1">{x}</Mono>)} />
-        <Row label="Overall" base={<Badge>{b.status}</Badge>} next={<Badge tone={replay.verified ? "good" : "bad"}>{replay.status}</Badge>} />
+        <Row label="Overall" base={<Badge>{b.status ?? "—"}</Badge>} next={<Badge tone={replay.verified ? "good" : "bad"}>{replay.status}</Badge>} />
       </tbody>
     </table>
   );
@@ -71,6 +73,7 @@ export function ReplayLab() {
   const replays = useApi(api.replays);
   const policies = useApi(api.policies);
   const [baseline, setBaseline] = useState("");
+  const [trials, setTrials] = useState(1);
   const [current, setCurrent] = useState<Replay>();
 
   const candidates = useMemo(() => (runs.data ?? []).filter((r) => r.kind === "scenario" && r.status === "completed"), [runs.data]);
@@ -89,7 +92,7 @@ export function ReplayLab() {
   }, [params, current]);
 
   const execute = useAction(async () => {
-    const result = await api.createReplay({ baseline_run_id: baseline });
+    const result = await api.createReplay({ baseline_run_id: baseline, trials: base?.agent_kind === "llm" ? trials : 1 });
     setCurrent(result);
     setParams({ replay: result.replay_id }, { replace: true });
     await Promise.all([replays.reload(), runs.reload()]);
@@ -114,12 +117,25 @@ export function ReplayLab() {
               <label className="text-sm sm:col-span-1">
                 <span className="mb-1 block text-xs font-medium text-ink-400">Baseline run</span>
                 <select aria-label="Baseline run" value={baseline} onChange={(e) => setBaseline(e.target.value)} className="w-full rounded-lg border border-ink-700 bg-ink-900 px-3 py-2 font-mono text-xs">
-                  {candidates.map((r) => <option key={r.run_id} value={r.run_id}>{r.run_id} · {r.scenario} · v{r.policy_version}</option>)}
+                  {candidates.map((r) => (
+                    <option key={r.run_id} value={r.run_id}>
+                      {r.run_id} · {r.agent_kind === "llm" ? `LLM ${r.model ?? r.provider}${r.provider_real ? "" : " (simulated)"}` : `scripted ${r.scenario}`}
+                      {r.enforcement === "baseline" ? " · enforcement off" : ` · v${r.policy_version}`}
+                    </option>
+                  ))}
                 </select>
               </label>
               <div>
                 <div className="mb-1 text-xs font-medium text-ink-400">Baseline policy</div>
-                <div className="text-sm">{base ? `v${base.policy_version}` : "—"} <span className="text-ink-400">{base && formatTime(base.started_at)}</span></div>
+                <div className="text-sm">{base ? (base.enforcement === "baseline" ? "enforcement off" : `v${base.policy_version}`) : "—"} <span className="text-ink-400">{base && formatTime(base.started_at)}</span></div>
+                {base?.agent_kind === "llm" && (
+                  <label className="mt-2 block text-xs text-ink-400">Model trials
+                    <input type="number" min={1} max={20} value={trials} aria-label="Model trials"
+                      onChange={(e) => setTrials(Math.max(1, Math.min(20, Number(e.target.value) || 1)))}
+                      className="ml-2 w-16 rounded border border-ink-700 bg-ink-900 px-2 py-1 text-sm text-ink-100" />
+                    <span className="mt-1 block">plus one deterministic scripted control trial</span>
+                  </label>
+                )}
               </div>
               <div>
                 <div className="mb-1 text-xs font-medium text-ink-400">Replay will use</div>
@@ -129,7 +145,7 @@ export function ReplayLab() {
               </div>
             </div>
             <Button variant="primary" onClick={() => void execute.run()} pending={execute.pending} disabled={!baseline} icon={<FlaskConical className="size-4" />}>
-              {execute.pending ? "Executing in fresh workspace…" : "Run replay"}
+              {execute.pending ? (base?.agent_kind === "llm" ? `Running ${trials} model trial(s) + control…` : "Executing in fresh workspace…") : "Run replay"}
             </Button>
           </div>
         )}
@@ -149,7 +165,7 @@ export function ReplayLab() {
                   <li key={a.id} className="rounded-lg border border-ink-700 p-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="text-sm font-medium">{a.title}</span>
-                      {a.required ? <PassFail passed={a.passed} /> : <Badge>not required</Badge>}
+                      {a.required ? <PassFail passed={a.passed} /> : <Badge>informational · {a.passed ? "yes" : "no"}</Badge>}
                     </div>
                     <p className="mt-1 text-xs text-ink-400">{a.detail}</p>
                     {a.evidence_event_ids.length > 0 && (
@@ -162,6 +178,30 @@ export function ReplayLab() {
               </ul>
             </Card>
           </div>
+          {current.report.model_trials && current.report.model_stats && (
+            <Card title="Model trials (probabilistic)" bodyClassName="p-0"
+              subtitle={`${current.report.model_stats.provider} · ${current.report.model_stats.model} — the model attempted the injected request in ${current.report.model_stats.attack_attempted} of ${current.report.model_stats.completed_trials} completed trial(s). Deterministic control run: ${current.report.deterministic_control?.status ?? "—"}.`}>
+              <div className="scroll-thin overflow-x-auto">
+                <table className="w-full min-w-[640px] text-sm">
+                  <thead className="text-left text-xs text-ink-400">
+                    <tr className="border-b border-ink-800"><th className="px-5 py-2 font-medium">Run</th><th className="font-medium">Attempted</th><th className="font-medium">Blocked</th><th className="font-medium">Exposed</th><th className="font-medium">Task</th><th className="pr-5 font-medium">Rules / error</th></tr>
+                  </thead>
+                  <tbody className="divide-y divide-ink-800">
+                    {current.report.model_trials.map((t) => (
+                      <tr key={t.run_id}>
+                        <td className="px-5 py-2.5"><Link to={`/events?run_id=${t.run_id}`} className="font-mono text-xs text-accent-300 hover:underline">{t.run_id}</Link></td>
+                        <td>{t.errored ? "—" : t.attack_attempted ? "yes" : "no"}</td>
+                        <td className="tabular-nums">{t.errored ? "—" : `${t.unauthorized_blocked} / ${t.unauthorized_attempted}`}</td>
+                        <td>{t.errored ? "—" : <PassFail passed={!t.sensitive_data_exposed} label={t.sensitive_data_exposed ? "yes" : "no"} />}</td>
+                        <td>{t.errored ? "—" : <PassFail passed={t.task_completed} label={t.task_completed ? "done" : "no"} />}</td>
+                        <td className="pr-5 font-mono text-xs">{t.errored ? <span className="text-amber-300">{t.provider_error}</span> : t.rules_responsible.join(", ") || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          )}
           <Card title="Differences between runs" subtitle="Each tool request matched by tool + canonical resource." bodyClassName="p-0">
             <div className="scroll-thin overflow-x-auto">
               <table className="w-full min-w-[720px] text-sm">
@@ -193,7 +233,7 @@ export function ReplayLab() {
             <li key={r.replay_id}>
               <button onClick={() => { setCurrent(r); setParams({ replay: r.replay_id }, { replace: true }); }}
                 className={cx("flex w-full flex-wrap items-center gap-3 px-5 py-3 text-left text-sm hover:bg-ink-850", current?.replay_id === r.replay_id && "bg-ink-850")}>
-                <Badge tone={r.status === "verified" ? "good" : r.status === "regression" ? "warn" : "bad"}>{r.status}</Badge>
+                <Badge tone={r.status === "verified" ? "good" : r.status === "failed" ? "bad" : "warn"}>{r.status}</Badge>
                 <span className="font-mono text-xs">{r.replay_id}</span>
                 <span className="text-ink-400">{r.scenario} · v{r.baseline_policy_version} → v{r.replay_policy_version}</span>
                 <span className="ml-auto text-xs text-ink-400">{relativeTime(r.created_at)}</span>

@@ -137,3 +137,30 @@ test("injection lab: baseline vs protected with the simulated agent (no API key)
   expect(all).not.toContain("AFTERIMAGE-CANARY-");
   expect(all).not.toContain("SYNTHETIC DEMO SECRET");
 });
+
+test("replay lab: LLM run replayed with model trials plus a deterministic control", async ({ page, request }) => {
+  // Self-contained setup: reset policy to baseline (earlier tests changed it), then create an LLM run.
+  expect((await request.post("/api/settings/reset", { data: { mode: "demo", confirm_text: "RESET DEMO" } })).ok()).toBeTruthy();
+  const run = await (await request.post("/api/runs/llm", { data: { provider: "simulated", enforcement: "protected" } })).json();
+
+  await page.goto("/replay");
+  await page.getByRole("combobox", { name: "Baseline run" }).selectOption(run.run_id);
+  await page.getByRole("spinbutton", { name: "Model trials" }).fill("2");
+  await page.getByRole("button", { name: "Run replay" }).click();
+  await expect(page.getByTestId("replay-status")).toContainText("Verified");
+  await expect(page.getByTestId("replay-status")).toContainText("deterministic");
+  await expect(page.getByText("Model trials (probabilistic)")).toBeVisible();
+  await expect(page.getByText(/attempted the injected request in 2 of 2/).first()).toBeVisible();
+  await expect(page.getByText("Deterministic control: Every unauthorized request was denied before execution")).toBeVisible();
+});
+
+test("responsive: no horizontal page overflow at phone width", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  for (const path of ["/", "/incidents", "/investigation", "/replay", "/experiment", "/policies", "/recovery", "/events", "/settings"]) {
+    await page.goto(path);
+    await expect(page.getByText("Backend connected")).toBeVisible();
+    await page.waitForLoadState("networkidle");
+    const width = await page.evaluate(() => document.documentElement.scrollWidth);
+    expect(width, `horizontal overflow on ${path}`).toBeLessThanOrEqual(390);
+  }
+});
