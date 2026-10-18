@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+
+# AFTERIMAGE runtime data (SQLite DB, synthetic workspaces, vault, archives)
+backend/data/
+*.db
+*.db-wal
+*.db-shm
+
+# Environment files — never commit real configuration
+.env
+.env.*
+!.env.example
+
+# Node / frontend
+node_modules/
+frontend/dist/
+frontend/test-results/
+frontend/playwright-report/
+*.log
+.DS_Store
+.vscode/
+.idea/
