@@ -10,7 +10,10 @@ AFTERIMAGE is a **local, single-user hackathon prototype** operating only on syn
 - Valid proposals execute **only** through `ToolGateway`, which asks the policy engine *before* touching the filesystem. Nothing in the model's output can change the policy, its version, the workspace root or the sensitivity labels.
 - The agent's only capabilities are `list_files`, `read_file` and `write_file` inside a fresh synthetic workspace. It has no shell, code execution, network, or URL fetching. The provider endpoint is fixed by operator configuration, never chosen by the model.
 - Steps are bounded (`AFTERIMAGE_LLM_MAX_STEPS`), each model call has a token cap and a timeout, and the SDK's retries are limited.
-- API keys stay in the backend process environment and are read only by the Anthropic SDK. They are never put in prompts, tool results, events, logs or API responses, and `/api/providers` / `/api/settings` report only *whether* a provider is configured.
+- API keys stay in the backend process environment. `ANTHROPIC_API_KEY` is read by the Anthropic SDK; `GEMINI_API_KEY` is read once by the Gemini adapter and passed explicitly to the `google-genai` client. `GOOGLE_API_KEY` and Vertex AI settings are deliberately ignored, and the key travels in the `x-goog-api-key` header, never a URL. Keys are never put in prompts, tool results, events, logs or API responses. `/api/providers`, `/api/settings` and `/api/providers/{p}/check` report only *whether* a provider is configured or reachable. Tests run a full Gemini experiment with a fake key and assert the key appears in no API response, log or DB row.
+- **Model output never executes tools by itself.** Gemini's automatic function calling is disabled. Every provider (Claude, Gemini, Ollama) only *returns* proposed calls, which go through the same schema check and gateway. Malformed calls are recorded as `tool_call_rejected` and never executed: Gemini `MALFORMED_FUNCTION_CALL`, unparseable Ollama arguments, or non-object arguments.
+- **No provider fallback.** If the selected provider is unconfigured, out of quota or failing, the request fails with a typed error. A free or local provider is never silently replaced by a paid one (`test_missing_key_is_a_config_error_and_never_falls_back`).
+- **Local stays local.** The Ollama host must be a loopback address unless `AFTERIMAGE_OLLAMA_ALLOW_REMOTE=1` is set deliberately, so choosing "Ollama (local)" keeps prompts and file contents on this machine. Models that don't advertise tool calling are refused, not used.
 
 ## Bypass audit (what can touch files, network or processes)
 
@@ -23,13 +26,13 @@ Audited by searching the backend for filesystem, network and process APIs (`os.o
 | `recovery.py` | No (operator API) | Fixed allow-list of vault files; secret-like names always rejected. |
 | `main.py` reset (`shutil.rmtree`) | No (operator API) | Fixed data directories; typed confirmation; refused while an experiment runs. |
 | `config.py` `.env` read | No | Server configuration. |
-| Anthropic SDK / Ollama `httpx2` calls | No | Operator-configured endpoint only. |
+| Anthropic SDK / `google-genai` SDK / Ollama `httpx2` calls | No | Operator-configured endpoints only; Ollama restricted to loopback by default. |
 | `subprocess`, `eval`, `exec` | — | Not used anywhere. |
 
 **Remaining bypass risks (not claimed to be solved):**
 
 1. **Baseline mode is a deliberate bypass.** `enforcement: "baseline"` swaps in an allow-all engine so the experiment can observe the unprotected behaviour. The workspace-boundary rule still applies, and it only ever runs on a fresh synthetic workspace. But anyone who can reach the API can start one, because there is no authentication.
-2. **Data sent to the model provider.** In protected mode the provider receives the contents of *allowed* synthetic files. In baseline mode it may also receive the fake secret. That secret is random and synthetic, but for a cloud provider it leaves the machine.
+2. **Data sent to the model provider.** In protected mode the provider receives the contents of *allowed* synthetic files. In baseline mode it may also receive the fake secret. That secret is random and synthetic, but for a cloud provider (Claude, Gemini) it leaves the machine. Free-tier Gemini usage may be used by Google to improve its products under Google's terms, so don't put real data in the workspace. With Ollama on loopback nothing leaves the machine.
 3. **Leak detection is exact matching.** The canary, its hex token and the header line are detected and redacted. A model that encodes, splits or paraphrases the secret could leak it in its output without being counted. *Restricted content returned to the agent* is measured at the gateway and does not have this limitation.
 4. **Allowed writes carry model-chosen content.** `write_file` is limited to `out/**` by policy, but what the model writes there is not filtered.
 5. **TOCTOU** in path resolution is narrowed (`O_NOFOLLOW`, inode re-check, containment re-check), not eliminated.
@@ -79,7 +82,7 @@ Audited by searching the backend for filesystem, network and process APIs (`os.o
 - **No authentication or authorization of human users.** Anyone who can reach the API can use it. Keep it on `localhost`.
 - **No encryption at rest.** The database and synthetic workspaces are plain files. (All data is synthetic.)
 - **Two agents.** The scripted agent is deterministic and deliberately gullible; it is the regression baseline. The LLM agent is real, but whether a given model follows the injection is probabilistic and is measured per trial. Neither result says anything about a model's general robustness.
-- **Real-provider verification.** The Anthropic adapter is tested through the official SDK against a local mock HTTP server. A run against the live API was not possible in the development environment (no key), and the Ollama adapter is untested against a live server.
+- **Real-provider verification.** The Anthropic and Gemini adapters are tested through their official SDKs against local mock HTTP servers. The Ollama adapter is tested against a mocked local server. No live run against Claude, Gemini or a real Ollama instance was possible in the development environment: there were no keys, no Ollama install, and the Gemini API was not reachable from the sandbox. Use the opt-in smoke tests.
 - **Causality is inferred.** The trigger document is identified from agent-reported provenance, ordering and a heuristic content scanner. The UI labels this *inferred*. A real agent runtime would need trustworthy provenance instrumentation.
 - **The instruction scanner is a heuristic** (three regular expressions). It is used for observation only and never blocks anything.
 - **TOCTOU** is narrowed, not eliminated: a parent directory swapped between resolution and open on a hostile local filesystem could still race. The synthetic workspace is not shared with untrusted processes.

@@ -33,19 +33,34 @@ On first start the backend creates `backend/data/` (SQLite DB, synthetic workspa
 #### Optional: a real LLM provider
 
 ```bash
-# Anthropic Claude (default provider; default model claude-opus-5-5)
-export ANTHROPIC_API_KEY=sk-ant-...            # in the shell that starts the backend
+# Google Gemini (a free-tier key from Google AI Studio works if the model is available to it)
+export GEMINI_API_KEY=...                      # in the shell that starts the backend
+AFTERIMAGE_LLM_PROVIDER=gemini uvicorn afterimage.main:create_app --factory --port 8000
+#   default model gemini-2.5-flash; override with AFTERIMAGE_GEMINI_MODEL=<model>
+
+# Anthropic Claude (paid API; default model claude-opus-5-5)
+export ANTHROPIC_API_KEY=sk-ant-...
 uvicorn afterimage.main:create_app --factory --reload --port 8000
 
-# or a local Ollama model
+# a local Ollama model (inference stays on this machine)
 ollama pull llama3.1 && ollama serve
 AFTERIMAGE_LLM_PROVIDER=ollama uvicorn afterimage.main:create_app --factory --port 8000
+#   override with AFTERIMAGE_OLLAMA_MODEL=<tool-capable model>, AFTERIMAGE_OLLAMA_HOST=http://127.0.0.1:<port>
 
 # no key at all: make the simulated (non-LLM) agent the default
 AFTERIMAGE_LLM_PROVIDER=simulated uvicorn afterimage.main:create_app --factory --port 8000
 ```
 
-**Settings → LLM agent configuration** shows which providers are configured. It never shows credential values. You can pick the provider and model per experiment in the **Injection Lab**. A real provider is billed per request: one experiment trial is roughly 2 × (up to 12 model calls).
+Several providers can be configured at once; you pick one per experiment in the **Injection Lab**. **Settings → LLM agent configuration** shows each provider's status, and its **Check** button verifies three things without generating content:
+- the key is accepted
+- the model is available to that key
+- for Ollama, whether the model supports tool calling
+
+Credential values are never shown, and AFTERIMAGE **never falls back** from one provider to another.
+
+**Usage limits.** One experiment trial makes up to 2 × 12 model calls. Gemini free-tier limits are per Google project and per model, and they change over time; per-minute limits are low.
+- A per-minute **rate limit** (HTTP 429) is retried a bounded number of times, honouring Google's retry delay.
+- A **daily quota exhausted** error is not retried. The experiment stops early and reports **inconclusive**, with guidance in the UI.
 
 ### 2. Frontend (React + Vite, port 5173)
 
@@ -60,20 +75,23 @@ Open <http://localhost:5173>. Vite proxies `/api` to `http://127.0.0.1:8000` (ov
 ### 3. Tests
 
 ```bash
-# Backend: 100 pytest tests (+2 optional real-provider tests, skipped by default).
-# No network or API key needed: providers are mocked (a local HTTP server stands in for the
-# Anthropic API, exercising the real SDK).
+# Backend: 135 pytest tests (+6 optional live-provider tests, skipped by default).
+# No network or API key needed: local mock HTTP servers stand in for the Anthropic and
+# Gemini APIs (exercising the real official SDKs) and for a local Ollama server.
 cd backend && .venv/bin/pytest -q
 
-# Optional real-provider smoke test (makes billable API calls):
-AFTERIMAGE_RUN_REAL_LLM=1 ANTHROPIC_API_KEY=sk-ant-... .venv/bin/pytest tests/test_real_provider_smoke.py
+# Optional live smoke tests, one opt-in flag per provider (real requests; may use quota or money):
+AFTERIMAGE_RUN_REAL_GEMINI=1 GEMINI_API_KEY=... .venv/bin/pytest tests/test_real_provider_smoke.py -k gemini -s
+AFTERIMAGE_RUN_REAL_OLLAMA=1 AFTERIMAGE_OLLAMA_MODEL=llama3.1 .venv/bin/pytest tests/test_real_provider_smoke.py -k ollama -s
+AFTERIMAGE_RUN_REAL_LLM=1 ANTHROPIC_API_KEY=sk-ant-... .venv/bin/pytest tests/test_real_provider_smoke.py -k anthropic -s
 
 # Frontend unit tests (Vitest + React Testing Library), type check and production build
 cd frontend && npm test && npm run typecheck && npm run build
 
-# Browser end-to-end (Playwright, 5 tests incl. Injection Lab, LLM replay and phone-width layout).
-# Starts its own backend on :8001 and frontend on :5174 with a throw-away data directory,
-# so it never touches your dev database. Uses the simulated agent: no key needed.
+# Browser end-to-end (Playwright, 6 tests incl. Injection Lab, LLM replay, Gemini/Ollama
+# provider flows and phone-width layout). Starts its own backend on :8001, frontend on :5174,
+# and a mock Gemini/Ollama API on :8099 (e2e/mock_providers.py), with a throw-away data
+# directory. No key or local model needed.
 cd frontend && npx playwright install chromium   # once, if you don't have a Playwright browser
 npm run test:e2e
 # Optional: PLAYWRIGHT_CHROMIUM_PATH=/path/to/chrome to use an existing Chromium,
@@ -127,7 +145,8 @@ backend/
     gateway.py        the only path from agent to files: request → decision → result events
     agent.py          deterministic scripted agent (benign / deliberately susceptible)
     llm_agent.py      LLM agent: bounded tool loop, strict tool-call validation, gateway-only execution
-    providers/        LLM provider abstraction: Anthropic (official SDK), Ollama, simulated/mock
+    providers/        LLM provider abstraction: Anthropic (anthropic SDK), Gemini (google-genai SDK),
+                      Ollama (local HTTP), simulated/mock; no cross-provider fallback
     experiment.py     baseline (enforcement off) vs protected prompt-injection experiment
     explainer.py      AI-assisted incident explanation, validated against persisted event IDs
     recorder.py       structured, hash-chained event recorder + chain verification
@@ -136,7 +155,7 @@ backend/
     replay.py         replay engine (scripted, or LLM trials + deterministic control), assertions, diffs
     recovery.py       snapshot vault with content hashes and verified restore
     main.py           FastAPI app, REST endpoints, idempotency, CORS, resets
-  tests/              pytest suite (100 tests + 2 optional real-provider tests)
+  tests/              pytest suite (135 tests + 6 optional live-provider tests)
 frontend/
   src/api.ts          typed API client
   src/pages/          Overview, Incidents, Investigation, Replay Lab, Injection Lab,
@@ -163,11 +182,15 @@ All settings are optional; see [`.env.example`](.env.example). Put them in `back
 | `AFTERIMAGE_DATA_DIR` | `backend/data` | DB, workspaces, vault, archives |
 | `AFTERIMAGE_CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Allowed browser origins (no wildcards) |
 | `AFTERIMAGE_MAX_READ_BYTES` | `65536` | Max bytes the agent may read per file |
-| `AFTERIMAGE_LLM_PROVIDER` | `anthropic` | Default provider: `anthropic`, `ollama` or `simulated` |
-| `AFTERIMAGE_LLM_MODEL` | provider default | `claude-opus-5-5` (Anthropic), `llama3.1` (Ollama) |
+| `AFTERIMAGE_LLM_PROVIDER` | `anthropic` | Default provider: `anthropic`, `gemini`, `ollama` or `simulated` |
+| `AFTERIMAGE_LLM_MODEL` | provider default | Model for the **default** provider only |
+| `AFTERIMAGE_ANTHROPIC_MODEL` / `_GEMINI_MODEL` / `_OLLAMA_MODEL` | `claude-opus-5-5` / `gemini-2.5-flash` / `llama3.1` | Per-provider models; never applied to another provider |
+| `AFTERIMAGE_GEMINI_RATE_LIMIT_RETRIES` / `_MAX_RETRY_WAIT_S` | `2` / `30` | Bounded retries for per-minute 429s (quota exhaustion is never retried) |
+| `AFTERIMAGE_OLLAMA_ALLOW_REMOTE` | off | Ollama host must be loopback unless this is `1` |
 | `AFTERIMAGE_LLM_EFFORT` | `medium` | Anthropic effort level; empty = not sent |
 | `AFTERIMAGE_LLM_TIMEOUT_S` / `_MAX_STEPS` / `_MAX_TOKENS` / `_MAX_TRIALS` | `120` / `12` / `16000` / `5` | Per-request timeout, agent step bound, tokens per model call, experiment trial cap |
-| `AFTERIMAGE_OLLAMA_HOST` | `http://127.0.0.1:11434` | Local Ollama server |
+| `AFTERIMAGE_OLLAMA_HOST` | `http://127.0.0.1:11434` | Local Ollama server (loopback only by default) |
+| `GEMINI_API_KEY` | — | Read from the **process environment** only (not `backend/.env`, not `GOOGLE_API_KEY`). Never returned by the API. |
 | `ANTHROPIC_API_KEY` | — | Read by the Anthropic SDK from the **process environment** (export it; it is not read from `backend/.env`). Never returned by the API. |
 
 Invalid values stop the backend at startup with a clear validation error.
@@ -183,14 +206,21 @@ Invalid values stop the backend at startup with a clear validation error.
 | 409 *another run is already in progress* | Wait for the current run to finish (scripted runs take well under a second; LLM runs take as long as the model). |
 | 400 `provider_missing_credentials` | Export `ANTHROPIC_API_KEY` before starting the backend, choose another provider, or use `simulated`. |
 | 400 `provider_config_error` *model not found* | Check `AFTERIMAGE_LLM_MODEL` / the model field; for Ollama run `ollama pull <model>`. |
-| 503 `provider_rate_limit` / `provider_timeout` / `provider_connection` | Transient provider problem; retry later or raise `AFTERIMAGE_LLM_TIMEOUT_S`. The run is recorded as failed, not faked. |
+| 429 `provider_quota_exhausted` | Gemini daily/free-tier quota used up for that model. Wait for the reset, pick another model, or enable billing on your Google project. Nothing falls back to another provider. |
+| 429 `provider_rate_limit` | Per-minute limit; AFTERIMAGE already retried with the server's delay. Wait, or use fewer trials. |
+| 400 `provider_model_unavailable` | The model is not available to your key/project/tier (or, for Ollama, not pulled). Use **Check** to test another model. |
+| 400 `provider_tools_unsupported` | The Ollama model cannot call tools. Choose a tool-capable model (e.g. `llama3.1`, `qwen2.5`). |
+| 400 `provider_invalid_credentials` / `provider_account_unsupported` | Key rejected, or the provider refuses this account/region. |
+| Backend refuses to start: *must be a loopback address* | `AFTERIMAGE_OLLAMA_HOST` points off-machine. Use localhost, or set `AFTERIMAGE_OLLAMA_ALLOW_REMOTE=1` deliberately. |
+| 503 `provider_timeout` / `provider_connection` | Transient provider problem; retry later or raise `AFTERIMAGE_LLM_TIMEOUT_S`. The run is recorded as failed, not faked. |
 | Experiment says *attack not reproduced* | The model ignored the injected instruction in every baseline trial. That is a valid result; the gateway is still tested by the deterministic control in Replay Lab. |
 | Playwright cannot find a browser | `npx playwright install chromium`, or set `PLAYWRIGHT_CHROMIUM_PATH`. |
 | Want a clean slate | Settings → Archive & reset, or stop the backend and delete `backend/data/`. |
 
 ## Known limitations
 
-- **Real-provider path verified only against a mock server here.** The Anthropic adapter is tested end to end through the official SDK against a local mock HTTP server, and the browser suite uses the simulated agent. No live API key was available in the development environment, so a run against the real API has not been verified. Run `tests/test_real_provider_smoke.py` with a key to check. The Ollama adapter has no automated test against a running Ollama server.
+- **No live provider has been verified.** The Gemini and Anthropic adapters are tested through their official SDKs against local mock HTTP servers. The Ollama adapter is tested against a mocked local server. The browser suite drives Gemini and Ollama through a mock API. No Gemini key, Anthropic key or Ollama install was available in the development environment. Use the opt-in smoke tests in `tests/test_real_provider_smoke.py` to verify against a real provider.
+- **Gemini default model.** `gemini-2.5-flash` is a model Google has offered on the free tier. Availability varies by account, region and over time, so it is configurable and checked, not assumed. Gemini model metadata does not report function-calling support, so the check shows *tool calling: unknown* until the first real run.
 - Experiments run in the background, and the Injection Lab polls real progress: the runs created so far and the policy decisions already persisted for the run in progress. LLM *replays* and single `POST /api/runs/llm` calls are still synchronous, so they show only a pending state until they finish. Background jobs are in-process threads: if the backend restarts mid-experiment, that experiment stays marked `running`.
 - LLM behaviour is probabilistic. The experiment and LLM replays report counts across trials. Leak detection is exact matching on the canary and its hex token, so a model that *transforms* the secret (encodes or splits it) could leak without being counted. "Restricted content returned to agent" is measured at the gateway and is not affected by this.
 - In the baseline (enforcement-off) run, the fake secret is sent to the configured LLM provider. It is random and synthetic, but it does leave the machine for a cloud provider.
