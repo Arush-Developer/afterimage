@@ -1,0 +1,107 @@
+import { expect, test, type Page } from "@playwright/test";
+
+const shots = process.env.E2E_SCREENSHOTS; // optional directory for screenshots
+
+async function snap(page: Page, name: string) {
+  if (shots) await page.screenshot({ path: `${shots}/${name}.png`, fullPage: true });
+}
+
+test("full demo: observe → enforce → investigate → remediate → replay → verify → recover", async ({ page }) => {
+  // Overview starts empty with backend-derived metrics.
+  await page.goto("/");
+  await expect(page.getByText("Backend connected")).toBeVisible();
+  await expect(page.getByText("No incidents yet")).toBeVisible();
+
+  // Scenario A — safe run.
+  await page.getByRole("button", { name: "Run Safe Scenario" }).click();
+  const last = page.getByTestId("last-run");
+  await expect(last).toContainText("Safe scenario");
+  await expect(last).toContainText("completed");
+  await expect(last).toContainText("No unauthorized access was recorded");
+
+  // Scenario B — simulated attack.
+  await page.getByRole("button", { name: "Simulate Attack" }).click();
+  await expect(last).toContainText("Controlled attack simulation");
+  await expect(last).toContainText("Denied requests: 2");
+  await snap(page, "01-overview");
+
+  // Scenario C — investigation.
+  await page.getByRole("button", { name: "Investigate incident" }).click();
+  await expect(page.getByRole("heading", { name: /Blocked attempt to access secret.txt/ })).toBeVisible();
+  await expect(page.getByText("POL-DENY-SECRET-FILE").first()).toBeVisible();
+  await expect(page.getByText("AI-BOUNDARY-001").first()).toBeVisible();
+  await expect(page.getByText(/controlled simulated attack/i)).toBeVisible();
+  const graph = page.getByRole("group", { name: "Evidence graph of recorded events" });
+  await expect(graph.getByRole("button")).toHaveCount(12);
+  await graph.getByRole("button", { name: /Incident recorded/ }).click();
+  await expect(page.getByText("Incident recorded:").first()).toBeVisible();
+  await snap(page, "02-investigation");
+
+  // Scenario D — remediation.
+  await page.getByRole("button", { name: "Review policy change" }).click();
+  await expect(page.getByRole("checkbox", { name: /Restrict read access/ })).toBeChecked();
+  await expect(page.getByRole("checkbox", { name: /Deny the whole class/ })).toBeChecked();
+  await page.getByRole("button", { name: "Preview change" }).click();
+  await expect(page.getByText("Proposed policy (v2)")).toBeVisible();
+  await snap(page, "03-policy-preview");
+  await page.getByRole("button", { name: "Apply as v2…" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Apply policy" }).click();
+  await expect(page.getByText(/Policy v2 is now active and enforced/)).toBeVisible();
+
+  // Scenario E — replay & verify.
+  await page.getByRole("button", { name: "Replay to verify" }).click();
+  await expect(page.getByText("Active policy v2")).toBeVisible();
+  await page.getByRole("button", { name: "Run replay" }).click();
+  const status = page.getByTestId("replay-status");
+  await expect(status).toContainText("Verified");
+  await expect(page.getByText("POL-DENY-SECRET-CLASS").first()).toBeVisible();
+  await snap(page, "04-replay");
+
+  // Persisted after refresh.
+  await page.reload();
+  await expect(page.getByTestId("replay-status")).toContainText("Verified");
+
+  // Regression path: disabling write_file blocks the attack but breaks the task -> not verified.
+  await page.goto("/policies");
+  await page.getByRole("checkbox", { name: /Disable write_file/ }).check();
+  await page.getByRole("button", { name: "Preview change" }).click();
+  await expect(page.getByText(/Legitimate operation would be denied/).first()).toBeVisible();
+  await page.getByRole("button", { name: "Apply as v3…" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Apply policy" }).click();
+  await page.getByRole("button", { name: "Replay to verify" }).click();
+  await page.getByRole("button", { name: "Run replay" }).click();
+  await expect(page.getByTestId("replay-status")).toContainText("regression");
+
+  // Scenario F — recovery.
+  await page.goto("/recovery");
+  await page.getByRole("button", { name: "Simulate unauthorized edit" }).click();
+  await expect(page.getByRole("heading", { name: "Snapshot v1" })).toBeVisible();
+  await page.getByRole("button", { name: "Restore this version…" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Restore file" }).click();
+  await expect(page.getByTestId("restore-result")).toContainText("Restored and hash-verified");
+  await snap(page, "05-recovery");
+
+  // Event explorer & settings show real data.
+  await page.goto("/events?outcome=denied");
+  await expect(page.getByText(/Hash chain intact/)).toBeVisible();
+  await snap(page, "06-events");
+  await page.goto("/settings");
+  await expect(page.getByText("Synthetic only (fictional project, fake secret)")).toBeVisible();
+  await snap(page, "07-settings");
+});
+
+test("secret content never reaches the browser", async ({ page }) => {
+  const bodies: string[] = [];
+  page.on("response", async (r) => {
+    if (r.url().includes("/api/")) bodies.push(await r.text().catch(() => ""));
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Simulate Attack" }).click();
+  await page.getByRole("button", { name: "Investigate incident" }).click();
+  await expect(page.getByText("Evidence graph")).toBeVisible();
+  await page.goto("/events");
+  await expect(page.getByText(/Hash chain intact/)).toBeVisible();
+  const all = bodies.join("\n") + (await page.content());
+  expect(all).not.toContain("AFTERIMAGE-CANARY-");
+  expect(all).not.toContain("SYNTHETIC DEMO SECRET");
+});
