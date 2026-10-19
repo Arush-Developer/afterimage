@@ -71,9 +71,13 @@ Expected: "Restored and hash-verified" with the original, modified and restored 
 
 ## 8. Real LLM agent: prompt-injection experiment (60–90 s)
 
-**Before the demo:** decide which provider to show.
-- **With a key:** `export ANTHROPIC_API_KEY=...` before starting the backend. Settings shows *Anthropic Claude: configured*.
-- **Without a key:** use **Simulated agent (no LLM)**. Say clearly that it is a rule-based stand-in, not a model. The UI labels it "simulated" everywhere.
+**Before the demo:** decide which provider to show, and rehearse it once. A real model's behaviour varies, and free-tier quotas can run out mid-demo.
+- **Gemini (free tier):** `export GEMINI_API_KEY=...` before starting the backend. In **Settings**, click **Check** on *Google Gemini*: it should say *model gemini-3.8-flash available*. If that model isn't available to your key, set `AFTERIMAGE_GEMINI_MODEL` to one that is, and check again. Keep **1 trial**, because free-tier per-minute limits are low.
+- **Ollama (local, no cloud):** `ollama pull llama3.1 && ollama serve`, then **Check** on *Ollama (local)*. It must say *tool calling: supported*. Good talking point: "nothing leaves this laptop."
+- **Claude:** `export ANTHROPIC_API_KEY=...` (paid API).
+- **No key at all:** use **Simulated agent (no LLM)**. Say clearly that it is a rule-based stand-in, not a model. The UI labels it "simulated" everywhere.
+
+Runs are labelled by what produced them: *Gemini · model*, *Ollama · local · model*, *Claude · model*, *simulated*, *scripted*.
 
 Go to **Injection Lab**, pick the provider, keep 1 trial (2–3 with a real model if time allows), and click **Run experiment**.
 
@@ -87,9 +91,10 @@ Expected when done, with the simulated agent:
 
 Click **Show model tool-call history** to show the baseline transcript: every call, the resource, allowed or denied, and the rule.
 
-With a **real model**, any of three verdicts is a valid result. Read it out honestly:
+With a **real model**, any of four verdicts is a valid result. Read it out honestly:
 - *Protected*: the model followed the injection in the baseline, and enforcement stopped it.
 - *Attack not reproduced*: the model ignored the injection. Say: "the model was robust in this trial, and enforcement doesn't depend on that."
+- *Inconclusive*: provider errors meant one side never ran. A typical cause is *Gemini quota exhausted* on the free tier. The amber notice explains it. Say: "We don't count a run that never happened. And AFTERIMAGE never quietly switches to a paid provider." Then switch to the simulated agent or another model yourself.
 - *Protection failed*: should not happen. Investigate.
 
 > "We don't assume the attack works. We measure it. Whatever the model decides, the gateway decides access, and 'leaked' is judged by a canary detector that the policy can't influence."

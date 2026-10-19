@@ -7,14 +7,32 @@ directory it is read first, but real environment variables always take precedenc
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from typing import Mapping
 
-from pydantic import BaseModel, Field, field_validator
+import ipaddress
+from urllib.parse import urlparse
+
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_DATA_DIR = BACKEND_DIR / "data"
 DEFAULT_CORS = "http://localhost:5173,http://127.0.0.1:5173"
+
+
+def is_loopback_url(url: str) -> bool:
+    host = (urlparse(url).hostname or "").strip("[]")
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _flag(value: str | None) -> bool:
+    return str(value or "").strip().lower() in ("1", "true", "yes", "on")
 
 
 class Settings(BaseModel):
@@ -31,9 +49,16 @@ class Settings(BaseModel):
     llm_max_tokens: int = Field(default=16000, ge=256, le=64000)
     llm_max_trials: int = Field(default=5, ge=1, le=20)
     ollama_host: str = "http://127.0.0.1:11434"
+    ollama_allow_remote: bool = False
     anthropic_base_url: str | None = None
+    # Per-provider model overrides (None = provider default). AFTERIMAGE_LLM_MODEL applies
+    # only to the default provider, so one provider's model name never leaks to another.
+    anthropic_model: str | None = None
+    gemini_model: str | None = None
+    ollama_model: str | None = None
     gemini_base_url: str | None = None
-    gemini_min_interval_s: float = Field(default=0.0, ge=0, le=120)
+    gemini_rate_limit_retries: int = Field(default=2, ge=0, le=5)
+    gemini_max_retry_wait_s: float = Field(default=30.0, ge=0, le=120)
 
     @field_validator("cors_origins")
     @classmethod
@@ -70,7 +95,7 @@ class Settings(BaseModel):
             raise ValueError("AFTERIMAGE_LLM_EFFORT must be empty or one of low, medium, high, xhigh, max")
         return value
 
-    @field_validator("llm_model")
+    @field_validator("llm_model", "anthropic_model", "gemini_model", "ollama_model")
     @classmethod
     def _validate_model(cls, value: str | None) -> str | None:
         import re
@@ -84,6 +109,22 @@ class Settings(BaseModel):
         if value and not value.startswith(("http://", "https://")):
             raise ValueError("URLs must start with http:// or https://")
         return value or None
+
+    @model_validator(mode="after")
+    def _ollama_must_be_local(self) -> "Settings":
+        """Selecting the local Ollama provider must keep inference on this machine."""
+        if not self.ollama_allow_remote and not is_loopback_url(self.ollama_host):
+            raise ValueError("AFTERIMAGE_OLLAMA_HOST must be a loopback address (localhost/127.0.0.1/::1) so "
+                             "inference stays local; set AFTERIMAGE_OLLAMA_ALLOW_REMOTE=1 to override")
+        return self
+
+    def model_for(self, provider: str) -> str | None:
+        """Configured model for a provider, or None for the provider's built-in default."""
+        specific = {"anthropic": self.anthropic_model, "gemini": self.gemini_model,
+                    "ollama": self.ollama_model}.get(provider)
+        if specific:
+            return specific
+        return self.llm_model if provider == self.llm_provider else None
 
     @property
     def db_path(self) -> Path:
@@ -111,7 +152,12 @@ def _read_dotenv(path: Path) -> dict[str, str]:
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, _, value = line.partition("=")
-        values[key.strip()] = value.strip().strip('"').strip("'")
+        value = value.strip()
+        if value[:1] in ('"', "'") and value[1:].find(value[0]) >= 0:
+            value = value[1:1 + value[1:].find(value[0])]  # quoted value: keep '#' inside quotes
+        else:
+            value = re.split(r"\s+#", value, maxsplit=1)[0].strip()  # drop inline " # comment"
+        values[key.strip()] = value
     return values
 
 
@@ -139,7 +185,12 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         llm_max_tokens=int(env.get("AFTERIMAGE_LLM_MAX_TOKENS", "16000")),
         llm_max_trials=int(env.get("AFTERIMAGE_LLM_MAX_TRIALS", "5")),
         ollama_host=env.get("AFTERIMAGE_OLLAMA_HOST", "http://127.0.0.1:11434"),
+        ollama_allow_remote=_flag(env.get("AFTERIMAGE_OLLAMA_ALLOW_REMOTE")),
         anthropic_base_url=env.get("AFTERIMAGE_ANTHROPIC_BASE_URL") or None,
+        anthropic_model=env.get("AFTERIMAGE_ANTHROPIC_MODEL") or None,
+        gemini_model=env.get("AFTERIMAGE_GEMINI_MODEL") or None,
+        ollama_model=env.get("AFTERIMAGE_OLLAMA_MODEL") or None,
         gemini_base_url=env.get("AFTERIMAGE_GEMINI_BASE_URL") or None,
-        gemini_min_interval_s=float(env.get("AFTERIMAGE_GEMINI_MIN_INTERVAL_S", "0") or 0),
+        gemini_rate_limit_retries=int(env.get("AFTERIMAGE_GEMINI_RATE_LIMIT_RETRIES", "2")),
+        gemini_max_retry_wait_s=float(env.get("AFTERIMAGE_GEMINI_MAX_RETRY_WAIT_S", "30")),
     )

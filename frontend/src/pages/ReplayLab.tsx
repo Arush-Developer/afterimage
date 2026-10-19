@@ -4,6 +4,7 @@ import { AlertTriangle, FlaskConical, ShieldCheck, ShieldX } from "lucide-react"
 import { api, type Replay, type RunEvaluation } from "../api";
 import { formatTime, relativeTime } from "../format";
 import { useAction, useApi } from "../hooks";
+import { PROVIDER_META, ProviderErrorNotice } from "../providers";
 import {
   Badge, Button, Card, EmptyState, ErrorState, InlineError, Loading, Mono, OutcomeTag, PageHeader, PassFail, cx,
 } from "../components/ui";
@@ -119,7 +120,9 @@ export function ReplayLab() {
                 <select aria-label="Baseline run" value={baseline} onChange={(e) => setBaseline(e.target.value)} className="w-full rounded-lg border border-ink-700 bg-ink-900 px-3 py-2 font-mono text-xs">
                   {candidates.map((r) => (
                     <option key={r.run_id} value={r.run_id}>
-                      {r.run_id} · {r.agent_kind === "llm" ? `LLM ${r.model ?? r.provider}${r.provider_real ? "" : " (simulated)"}` : `scripted ${r.scenario}`}
+                      {r.run_id} · {r.agent_kind === "llm"
+                        ? (r.provider_real ? `${PROVIDER_META[r.provider ?? ""]?.short ?? "LLM"} ${r.model ?? ""}` : `simulated ${r.model ?? ""}`)
+                        : `scripted ${r.scenario}`}
                       {r.enforcement === "baseline" ? " · enforcement off" : ` · v${r.policy_version}`}
                     </option>
                   ))}
@@ -149,7 +152,9 @@ export function ReplayLab() {
             </Button>
           </div>
         )}
-        <InlineError message={execute.error} onDismiss={execute.clearError} />
+        {execute.error && (execute.errorCode?.startsWith("provider_")
+          ? <ProviderErrorNotice message={execute.error} code={execute.errorCode} provider={base?.provider} retryAfterS={execute.retryAfterS} />
+          : <InlineError message={execute.error} onDismiss={execute.clearError} />)}
       </Card>
 
       {current && (

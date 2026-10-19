@@ -3,6 +3,7 @@ import { Sparkles } from "lucide-react";
 import { api, type AiExplanation } from "../api";
 import { formatTime } from "../format";
 import { useAction, useApi } from "../hooks";
+import { ProviderErrorNotice } from "../providers";
 import { Badge, Button, Card, InlineError } from "./ui";
 
 /** Optional LLM-written explanation of an incident. Every statement shown cites recorded
@@ -48,7 +49,9 @@ export function AiExplanationCard({ incidentId, onSelect }: { incidentId: string
       {providers.data && realConfigured.length === 0 && !ex && (
         <p className="text-sm text-ink-400">No real LLM provider is configured, so no AI explanation is available. The rule-based findings above are the deterministic explanation. Configure a provider in the backend environment to enable this.</p>
       )}
-      <InlineError message={explain.error} onDismiss={explain.clearError} />
+      {explain.error && (explain.errorCode?.startsWith("provider_")
+        ? <ProviderErrorNotice message={explain.error} code={explain.errorCode} provider={chosen} retryAfterS={explain.retryAfterS} />
+        : <InlineError message={explain.error} onDismiss={explain.clearError} />)}
       {ex && (
         <div className="space-y-4" data-testid="ai-explanation">
           <div className="flex flex-wrap items-center gap-2 text-xs text-ink-400">

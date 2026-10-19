@@ -46,7 +46,7 @@ Key design choices:
 | `policy.py` | A tiny rule engine: deny rules win, then require-approval rules, then allow rules, otherwise *default deny*. Every decision names the exact rule. Also holds the menu of safe policy changes. |
 | `gateway.py` | The security checkpoint between agent and files. Logs the request, asks the policy engine, and only then touches the file. Records size + SHA-256 of what was read, never the protected content. Flags instruction-like text it sees in files. |
 | `agent.py` | A scripted "agent". In safe mode it ignores instructions found in documents. In attack mode it is deliberately gullible and tries to follow them — so the attack is repeatable. Kept as the deterministic regression baseline. |
-| `providers/` | One interface (`complete(system, turns, tools)`) with four adapters: **Anthropic** (official `anthropic` SDK with structured tool calling), **Gemini** (official `google-genai` SDK, function calling with automatic execution disabled; thought signatures are round-tripped), **Ollama** (local server) and **simulated** (a rule-based stand-in, clearly labelled not-an-LLM). It turns every failure into a typed error (missing credentials, bad model, timeout, rate limit, refusal). |
+| `providers/` | One interface (`complete(system, turns, tools)`) with four adapters: **Anthropic** (official `anthropic` SDK), **Gemini** (Google's official `google-genai` SDK, automatic function calling off), **Ollama** (local HTTP server, loopback-only, with a tool-capability check) and **simulated** (a rule-based stand-in, clearly labelled not-an-LLM). Each turns every failure into a typed error: missing/invalid key, model unavailable, quota exhausted vs. rate limit, timeout, refusal, tools unsupported. A `check()` verifies a provider without generating content. There is no fallback between providers. |
 | `llm_agent.py` | The real agent loop. It gives the model the task and three tool descriptions, validates every proposed tool call against a strict schema, runs valid ones **only through the gateway**, feeds the result back, and stops after a fixed number of steps. Everything it stores is redacted. |
 | `experiment.py` | Runs the same model and task twice per trial, once with enforcement **off** (baseline) and once **on** (protected), and counts what actually happened. Says "attack not reproduced" when the baseline model didn't take the bait. Can run in the background with live progress. |
 | `explainer.py` | Optional AI write-up of an incident. The model sees only stored evidence and must cite event IDs. The server throws away any claim citing an ID that isn't in the evidence. |
@@ -86,6 +86,8 @@ task ──▶ provider.complete(system, turns, tools) ──▶ proposed tool c
                               tool result back to the model ──▶ next step (≤ MAX_STEPS)
 final answer (redacted) ──▶ run row; transcript stores tool metadata only, never file contents
 ```
+
+Provider-specific details stay inside the adapter. For example, Gemini's thought signatures are kept by replaying the model's own `Content` object (`Turn.provider_payload`) on the next call. That object is never persisted.
 
 The same loop runs in **protected** mode (active policy) and **baseline** mode (allow-all engine; the workspace boundary still applies). Only the engine changes, so the comparison is apples to apples.
 

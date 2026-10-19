@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ApiError } from "./api";
 
 export interface AsyncState<T> {
   data: T | undefined;
@@ -42,21 +43,29 @@ export function useApi<T>(loader: () => Promise<T>, deps: unknown[] = []): Async
 export function useAction<A extends unknown[], R>(action: (...args: A) => Promise<R>) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string>();
+  const [errorCode, setErrorCode] = useState<string>();
+  const [retryAfterS, setRetryAfterS] = useState<number>();
   const inFlight = useRef(false);
   const run = useCallback(async (...args: A): Promise<R | undefined> => {
     if (inFlight.current) return undefined; // ignore double clicks
     inFlight.current = true;
     setPending(true);
     setError(undefined);
+    setErrorCode(undefined);
+    setRetryAfterS(undefined);
     try {
       return await action(...args);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      if (e instanceof ApiError) {
+        setErrorCode(e.code);
+        setRetryAfterS(e.retryAfterS);
+      }
       return undefined;
     } finally {
       inFlight.current = false;
       setPending(false);
     }
   }, [action]);
-  return { run, pending, error, clearError: () => setError(undefined) };
+  return { run, pending, error, errorCode, retryAfterS, clearError: () => setError(undefined) };
 }

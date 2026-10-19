@@ -87,3 +87,21 @@ def test_cors_only_allows_configured_origin(client):
     assert ok.headers.get("access-control-allow-origin") == "http://localhost:5173"
     bad = client.options("/api/health", headers={"Origin": "http://evil.example", "Access-Control-Request-Method": "GET"})
     assert "access-control-allow-origin" not in bad.headers
+
+
+def test_env_example_copied_to_backend_env_loads(tmp_path):
+    """The documented setup step (copy .env.example to backend/.env) must produce a valid config."""
+    from pathlib import Path
+    from afterimage.config import _read_dotenv
+    example = Path(__file__).resolve().parents[2] / ".env.example"
+    values = _read_dotenv(example)
+    values["AFTERIMAGE_DATA_DIR"] = str(tmp_path)
+    settings = load_settings(values)
+    assert settings.llm_provider == "anthropic" and settings.gemini_model is None
+
+
+def test_dotenv_parser_handles_inline_comments_and_quotes(tmp_path):
+    from afterimage.config import _read_dotenv
+    env = tmp_path / ".env"
+    env.write_text('A=1  # note\nB="x # y"\nC=\'q\'\n# full comment\nD=\nE=http://h:1#frag\n')
+    assert _read_dotenv(env) == {"A": "1", "B": "x # y", "C": "q", "D": "", "E": "http://h:1#frag"}

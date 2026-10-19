@@ -2,7 +2,13 @@
 
 Base URL: `http://127.0.0.1:8000`. Interactive OpenAPI docs: `/docs`. All bodies are JSON.
 
-**Errors** use `{"detail": "<message>", "code": "<code>"}` with status 400 (`invalid_request`), 404 (`not_found`), 409 (`conflict`) or 500 (`internal_error`). LLM provider failures use `code: "provider_<kind>"`: **400** for configuration problems (`provider_missing_credentials`, `provider_config_error`, `provider_unknown_provider`, `provider_invalid_model`), **503** for transient ones (`provider_rate_limit`, `provider_timeout`, `provider_connection`, `provider_unavailable`), **502** otherwise (`provider_bad_request`, `provider_bad_response`). Messages never contain key material. Schema validation failures return FastAPI's standard 422 with a `detail` list. IDs are validated against `^(run|evt|dec|inc|rpl|snp|exp)_[0-9a-f]{16}$`.
+**Errors** use `{"detail": "<message>", "code": "<code>"}` with status 400 (`invalid_request`), 404 (`not_found`), 409 (`conflict`) or 500 (`internal_error`). LLM provider failures use `code: "provider_<kind>"`. Messages never contain key material.
+- **400**, configuration problems: `provider_missing_credentials`, `provider_invalid_credentials`, `provider_model_unavailable`, `provider_tools_unsupported`, `provider_account_unsupported`, `provider_config_error`, `provider_unknown_provider`, `provider_invalid_model`.
+- **429**, usage limits: `provider_quota_exhausted` (e.g. Gemini free-tier daily quota; not retried) and `provider_rate_limit` (per-minute; already retried a bounded number of times). Both include `retry_after_s` when the provider gave one, plus a `Retry-After` header.
+- **503**, transient problems: `provider_timeout`, `provider_connection`, `provider_api_error`.
+- **502** otherwise: `provider_bad_request`, `provider_bad_response`, `provider_refusal`.
+
+No endpoint ever substitutes a different provider for the one requested. Schema validation failures return FastAPI's standard 422 with a `detail` list. IDs are validated against `^(run|evt|dec|inc|rpl|snp|exp)_[0-9a-f]{16}$`.
 
 **Idempotency**: every state-changing `POST` (except preview and reset) accepts an optional `Idempotency-Key` header (8–64 chars `[A-Za-z0-9_-]`). Repeating a key returns the stored response with header `Idempotent-Replay: true`; reusing it on a different endpoint returns 409.
 
@@ -23,9 +29,10 @@ Base URL: `http://127.0.0.1:8000`. Interactive OpenAPI docs: `/docs`. All bodies
 | POST | `/api/runs/attack` | Execute the controlled attack simulation. **201** → run with `incident_id`. |
 | GET | `/api/runs/{run_id}` | One run: `status`, `policy_version`, `task_completed`, `sensitive_exposed`, `output_summary`, `result` (files read, denied calls, …). |
 | GET | `/api/runs/{run_id}/events` | All events for a run, in order. |
-| POST | `/api/runs/llm` | `{provider?, model?, enforcement: "protected"\|"baseline"}` → run an **LLM agent** on the synthetic project (synchronous). **201** → run with `agent_kind: "llm"`, `provider`, `model`, `provider_real`, `agent_steps`, `provider_error`. `baseline` disables policy enforcement (workspace boundary still applies). |
+| POST | `/api/runs/llm` | `{provider?: anthropic\|gemini\|ollama\|simulated, model?, enforcement: "protected"\|"baseline"}` → run an **LLM agent** on the synthetic project (synchronous). **201** → run with `agent_kind: "llm"`, `provider`, `model`, `provider_real`, `agent_steps`, `provider_error`. `baseline` disables policy enforcement (workspace boundary still applies). |
 | GET | `/api/runs/{run_id}/transcript` | Model tool-call history: `[{step, kind: model_text\|tool_result\|error, text, tool, resource_id, allowed, rule_id}]`. File contents are never included. |
-| GET | `/api/providers` | `{providers: [{provider, label, real, configured, default_model, detail}], default_provider, default_models, configured_model, max_trials, max_steps}`. No credential values. |
+| GET | `/api/providers` | `{providers: [{provider, label, real, local, billing, configured, default_model, detail}], default_provider, default_models, configured_model, max_trials, max_steps}`. `provider` ∈ `anthropic`, `gemini`, `ollama`, `simulated`. Cheap: no paid API calls. `configured` means a key is present (cloud) or the local server answers (Ollama). No credential values. |
+| GET | `/api/providers/{provider}/check?model=` | Live check: `{configured, reachable, model_available, tool_calling: supported\|unsupported\|unknown, error_kind?, detail, model, checked_at}`. Uses metadata endpoints only (Gemini `models.get`, Anthropic `models.retrieve`, Ollama `/api/version`, `/api/tags`, `/api/show`), never content generation. |
 
 Every run carries `agent_kind` (`scripted` \| `llm`) and `enforcement` (`protected` \| `baseline`). A concurrent interactive run returns 409.
 
@@ -35,7 +42,7 @@ Every run carries `agent_kind` (`scripted` \| `llm`) and `enforcement` (`protect
 |---|---|---|
 | POST | `/api/experiments` | `{provider?, model?, trials: 1-20 (capped by AFTERIMAGE_LLM_MAX_TRIALS), background?: bool}` → for each trial, one **baseline** (enforcement off) and one **protected** LLM run, each in a fresh workspace. With `background: true` it returns immediately with `status: "running"`, `report: {}`. **201**. |
 | GET | `/api/experiments` | Saved experiments (`status`: `running`, `error`, or the verdict). |
-| GET | `/api/experiments/{id}` | `{status, report, progress: {total_runs, runs: [{run_id, enforcement, status}]}}`. `report.verdict` ∈ `protected`, `protection_failed`, `attack_not_reproduced`, `inconclusive` (no baseline trial finished, or the attack reproduced but no protected trial finished — provider errors are never turned into a verdict); `report.baseline` / `report.protected` aggregate counts (`restricted_file_requested`, `restricted_content_returned`, `secret_leaked`, `legitimate_task_completed`, `errored_trials`); per-trial rows; `notes`; `ground_truth`. |
+| GET | `/api/experiments/{id}` | `{status, report, progress: {total_runs, runs: [{run_id, enforcement, status}]}}`. `report.verdict` ∈ `protected`, `protection_failed`, `attack_not_reproduced`, `inconclusive` (provider errors meant one side never completed; nothing is claimed); `report.stopped_early` names a non-recoverable provider error (e.g. `quota_exhausted`) that ended the experiment before all trials ran; per-trial rows include `provider_error` and `provider_error_kind`; `report.baseline` / `report.protected` aggregate counts (`restricted_file_requested`, `restricted_content_returned`, `secret_leaked`, `legitimate_task_completed`, `errored_trials`); per-trial rows; `notes`; `ground_truth`. |
 
 ## Incidents
 

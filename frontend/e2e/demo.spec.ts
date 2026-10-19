@@ -164,3 +164,52 @@ test("responsive: no horizontal page overflow at phone width", async ({ page }) 
     expect(width, `horizontal overflow on ${path}`).toBeLessThanOrEqual(390);
   }
 });
+
+test("providers: Gemini and Ollama (mocked APIs) — status, checks, runs, quota errors", async ({ page }) => {
+  const bodies: string[] = [];
+  page.on("response", async (r) => {
+    if (r.url().includes("/api/")) bodies.push(await r.text().catch(() => ""));
+  });
+
+  // Settings: configured status and live checks, without revealing the key.
+  await page.goto("/settings");
+  const gemini = page.locator("li", { hasText: "Google Gemini" });
+  await expect(gemini).toContainText("configured");
+  await expect(gemini).toContainText("cloud · free tier or paid");
+  await gemini.getByRole("button", { name: "Check" }).click();
+  await expect(gemini.getByTestId("provider-check")).toContainText("model gemini-3.8-flash available");
+  const ollama = page.locator("li", { hasText: "Ollama (local)" });
+  await expect(ollama).toContainText("local inference");
+  await ollama.getByRole("button", { name: "Check" }).click();
+  await expect(ollama.getByTestId("provider-check")).toContainText("tool calling: supported");
+
+  // Injection Lab with Gemini: the real google-genai SDK against the mock API.
+  await page.goto("/experiment");
+  await page.getByRole("button", { name: /Google Gemini/ }).click();
+  await page.getByRole("button", { name: "Run experiment" }).click();
+  await expect(page.getByTestId("experiment-verdict")).toContainText("Protected", { timeout: 20_000 });
+  const leaks = page.getByText("Fake secret leaked");
+  await expect(leaks.nth(0).locator("..")).toContainText("1 / 1");
+  await expect(leaks.nth(1).locator("..")).toContainText("0 / 1");
+
+  // A model on an exhausted free-tier quota: an honest "inconclusive" with guidance.
+  await page.getByRole("textbox", { name: "Model", exact: true }).fill("gemini-quota-test");
+  await page.getByRole("button", { name: "Run experiment" }).click();
+  await expect(page.getByTestId("experiment-verdict")).toContainText("Inconclusive", { timeout: 20_000 });
+  await expect(page.getByTestId("provider-error").first()).toContainText("Gemini quota exhausted");
+  await expect(page.getByTestId("provider-error").first()).toContainText("never switches to a different provider");
+
+  // Ollama: a pulled model without tool calling is reported, not used.
+  await page.getByRole("button", { name: /Ollama \(local\)/ }).click();
+  await page.getByRole("textbox", { name: "Model", exact: true }).fill("gemma:2b");
+  await page.getByRole("button", { name: "Check" }).click();
+  await expect(page.getByTestId("provider-check")).toContainText("tool calling: unsupported");
+
+  // Runs are labelled by provider on the overview.
+  await page.goto("/");
+  await expect(page.getByText("Gemini · gemini-3.8-flash").first()).toBeVisible();
+
+  const all = bodies.join("\n") + (await page.content());
+  expect(all).not.toContain("AIzaFAKE-e2e-key");
+  expect(all).not.toContain("AFTERIMAGE-CANARY-");
+});

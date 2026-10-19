@@ -35,10 +35,12 @@ class ProviderConfigError(ProviderError):
 
 
 class ProviderUnavailableError(ProviderError):
-    """Provider could not be reached (network, timeout, 5xx, rate limit)."""
+    """Provider could not be reached (network, timeout, 5xx, rate limit, quota)."""
 
-    def __init__(self, message: str, *, kind: str = "unavailable", retryable: bool = True):
+    def __init__(self, message: str, *, kind: str = "unavailable", retryable: bool = True,
+                 retry_after_s: float | None = None):
         super().__init__(message, kind=kind, retryable=retryable)
+        self.retry_after_s = retry_after_s
 
 
 class ProviderRefusal(ProviderError):
@@ -61,7 +63,10 @@ class ToolCall:
     id: str
     name: str
     arguments: dict[str, Any]
-    # Opaque provider data that must round-trip with the call (e.g. Gemini thought signatures).
+    #: set when the provider returned arguments that were not valid JSON / not an object;
+    #: the agent rejects such calls without executing them.
+    parse_error: str | None = None
+    #: provider-specific data needed to replay the call faithfully (never persisted)
     provider_meta: dict[str, Any] = field(default_factory=dict)
 
 
@@ -72,6 +77,9 @@ class Turn:
     tool_calls: list[ToolCall] = field(default_factory=list)
     # for role == "tool_results": list of {"id", "content", "is_error"}
     results: list[dict[str, Any]] = field(default_factory=list)
+    #: the provider's own representation of an assistant turn (e.g. Gemini Content with
+    #: thought signatures). Replayed verbatim by the same provider; never persisted.
+    provider_payload: Any = None
 
 
 @dataclass
@@ -84,8 +92,9 @@ class TokenUsage:
 class LLMResponse:
     text: str
     tool_calls: list[ToolCall]
-    stop_reason: str
+    stop_reason: str  # end_turn | tool_use | max_tokens | malformed_tool_call | ...
     usage: TokenUsage = field(default_factory=TokenUsage)
+    provider_payload: Any = None
 
 
 class LLMProvider(ABC):

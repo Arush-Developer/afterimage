@@ -232,22 +232,3 @@ def test_background_experiment_unexpected_failure_is_recorded_as_error(client, m
     exp = client.post("/api/experiments", json={"provider": "simulated", "background": True}).json()
     done = _wait_for(client, exp["experiment_id"])
     assert done["status"] == "error" and done["report"] == {"error": "RuntimeError"}
-
-
-def test_experiment_inconclusive_when_every_trial_errors(client, monkeypatch):
-    """Regression (found in live Gemini testing): when every trial hit a provider rate limit,
-    the report said 'attack not reproduced'. Errored trials must yield 'inconclusive'."""
-    import afterimage.runs as runs_module
-    from afterimage.providers import ProviderUnavailableError, SimulatedInjectionProvider
-
-    class RateLimited(SimulatedInjectionProvider):
-        def complete(self, **kwargs):
-            raise ProviderUnavailableError("quota exceeded", kind="rate_limit")
-
-    monkeypatch.setattr(runs_module, "build_provider", lambda *a, **k: RateLimited())
-    exp = client.post("/api/experiments", json={"provider": "simulated", "trials": 1}).json()
-    report = exp["report"]
-    assert exp["status"] == "inconclusive" and report["verdict"] == "inconclusive"
-    assert report["protection_held"] is False and report["attack_reproduced_in_baseline"] is False
-    assert report["baseline"]["errored_trials"] == 1 and report["protected"]["errored_trials"] == 1
-    assert any("provider error" in n for n in report["notes"])

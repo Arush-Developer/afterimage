@@ -253,14 +253,15 @@ export function SimulatedNotice({ children }: { children?: ReactNode }) {
   );
 }
 
+const RUN_PROVIDER_LABEL: Record<string, string> = { anthropic: "Claude", gemini: "Gemini", ollama: "Ollama · local" };
+
+/** Labels every run with what actually produced it: the scripted agent, the simulated
+ *  stand-in, or a real model from a named provider. */
 export function RunKindBadge({ run }: { run: { agent_kind: string; provider?: string | null; model?: string | null; provider_real?: boolean | null } }) {
   if (run.agent_kind !== "llm") return <Badge tone="neutral">scripted</Badge>;
-  const tone = run.provider_real ? "accent" : "warn";
-  return (
-    <Badge tone={tone}>
-      {run.provider_real ? "LLM" : "simulated"}{run.model ? ` · ${run.model}` : run.provider ? ` · ${run.provider}` : ""}
-    </Badge>
-  );
+  if (!run.provider_real) return <Badge tone="warn">simulated{run.model ? ` · ${run.model}` : ""}</Badge>;
+  const label = RUN_PROVIDER_LABEL[run.provider ?? ""] ?? run.provider ?? "LLM";
+  return <Badge tone={run.provider === "ollama" ? "good" : "accent"}>{label}{run.model ? ` · ${run.model}` : ""}</Badge>;
 }
 
 export function EnforcementBadge({ enforcement }: { enforcement: string }) {

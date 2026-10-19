@@ -1,9 +1,34 @@
 import { useState } from "react";
 import { Cloud, Cpu, Database, FlaskRound, RotateCcw, Trash2 } from "lucide-react";
-import { api } from "../api";
+import { api, type ProviderCheck, type ProviderStatus } from "../api";
+import { CheckResult } from "../components/ProviderPicker";
+import { ProviderWhereBadge } from "../providers";
 import { formatBytes } from "../format";
 import { useAction, useApi } from "../hooks";
 import { Badge, Button, Card, ConfirmDialog, ErrorState, InlineError, KeyValue, Loading, Mono, PageHeader } from "../components/ui";
+
+function ProviderStatusRow({ status, model }: { status: ProviderStatus; model: string }) {
+  const [check, setCheck] = useState<ProviderCheck>();
+  const run = useAction(async () => setCheck(await api.checkProvider(status.provider)));
+  return (
+    <li className="rounded-lg border border-ink-700 p-3 text-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="font-medium">{status.label}</span>
+        <span className="flex items-center gap-2">
+          {status.configured ? <Badge tone="good">configured</Badge> : <Badge tone="neutral">not configured</Badge>}
+          <Button variant="ghost" className="px-2 py-1 text-xs" onClick={() => void run.run()} pending={run.pending}>Check</Button>
+        </span>
+      </div>
+      <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-ink-400">
+        <ProviderWhereBadge provider={status.provider} />
+        <span>model <Mono>{model}</Mono></span>
+      </div>
+      <p className="mt-1 text-xs text-ink-400">{status.detail}</p>
+      {check && <div className="mt-2"><CheckResult check={check} /></div>}
+      {run.error && <p role="alert" className="mt-1 text-xs text-rose-300">{run.error}</p>}
+    </li>
+  );
+}
 
 export function Settings() {
   const settings = useApi(api.settings);
@@ -74,21 +99,12 @@ export function Settings() {
           <div>
             <div className="mb-2 text-xs font-medium text-ink-400">Provider status (credentials never shown)</div>
             <ul className="space-y-2">
-              {s.llm.providers.map((p) => (
-                <li key={p.provider} className="rounded-lg border border-ink-700 p-3 text-sm">
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium">{p.label}</span>
-                    {p.configured
-                      ? <Badge tone="good">configured</Badge>
-                      : <Badge tone="neutral">not configured</Badge>}
-                  </div>
-                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-ink-400">
-                    {p.real ? <Badge tone="accent">real model</Badge> : <Badge tone="warn">simulated</Badge>}
-                    <span>{p.detail}</span>
-                  </div>
-                </li>
-              ))}
+              {s.llm.providers.map((p) => <ProviderStatusRow key={p.provider} status={p} model={s.llm.models[p.provider]} />)}
             </ul>
+            <p className="mt-2 text-xs text-ink-500">
+              Ollama host <Mono>{s.llm.ollama_host}</Mono> · {s.llm.ollama_local_only ? "restricted to this machine (loopback only)" : "remote host explicitly allowed"}.
+              No provider ever falls back to another.
+            </p>
           </div>
         </div>
       </Card>
