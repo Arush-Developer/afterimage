@@ -100,7 +100,7 @@ npm run test:e2e
 #           AFTERIMAGE_PYTHON=/path/to/python if your venv lives elsewhere.
 ```
 
-### 4. Reset the demo
+### 4. Reset the Demo
 
 In the UI: **Settings → Reset demo…** (type `RESET DEMO`) restores the baseline policy and vault files and removes run workspaces — **evidence is kept**. **Archive & reset…** (type `ARCHIVE AND RESET`) copies the database to `backend/data/archives/` and starts empty.
 
