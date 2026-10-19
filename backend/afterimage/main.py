@@ -51,20 +51,20 @@ ChangeId = Literal["restrict-read-scope", "deny-secret-class", "require-approval
 
 # -- request bodies -------------------------------------------------------------
 class LLMRunRequest(BaseModel):
-    provider: Literal["anthropic", "ollama", "simulated"] | None = None
+    provider: Literal["anthropic", "gemini", "ollama", "simulated"] | None = None
     model: str | None = Field(default=None, pattern=r"^[A-Za-z0-9._:/-]{1,100}$")
     enforcement: Literal["protected", "baseline"] = "protected"
 
 
 class ExperimentRequest(BaseModel):
-    provider: Literal["anthropic", "ollama", "simulated"] | None = None
+    provider: Literal["anthropic", "gemini", "ollama", "simulated"] | None = None
     model: str | None = Field(default=None, pattern=r"^[A-Za-z0-9._:/-]{1,100}$")
     trials: int = Field(default=1, ge=1, le=20)
     background: bool = False  # true: return immediately with status "running"; poll GET for progress
 
 
 class ExplainRequest(BaseModel):
-    provider: Literal["anthropic", "ollama", "simulated"] | None = None
+    provider: Literal["anthropic", "gemini", "ollama", "simulated"] | None = None
     model: str | None = Field(default=None, pattern=r"^[A-Za-z0-9._:/-]{1,100}$")
 
 

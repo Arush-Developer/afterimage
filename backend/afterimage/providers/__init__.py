@@ -10,22 +10,24 @@ from typing import Any
 
 from .anthropic_provider import DEFAULT_MODEL as ANTHROPIC_DEFAULT_MODEL
 from .anthropic_provider import AnthropicProvider
+from .gemini_provider import DEFAULT_MODEL as GEMINI_DEFAULT_MODEL
+from .gemini_provider import GeminiProvider, gemini_credentials_present
 from .base import (LLMProvider, LLMResponse, ProviderConfigError, ProviderError, ProviderRefusal,
                    ProviderUnavailableError, ToolCall, ToolSpec, TokenUsage, Turn)
 from .mock_provider import ScriptedProvider, SimulatedInjectionProvider
 from .ollama_provider import DEFAULT_MODEL as OLLAMA_DEFAULT_MODEL
 from .ollama_provider import OllamaProvider
 
-PROVIDERS = ("anthropic", "ollama", "simulated")
+PROVIDERS = ("anthropic", "gemini", "ollama", "simulated")
 MODEL_RE = re.compile(r"^[A-Za-z0-9._:/-]{1,100}$")
 
-DEFAULT_MODELS = {"anthropic": ANTHROPIC_DEFAULT_MODEL, "ollama": OLLAMA_DEFAULT_MODEL,
+DEFAULT_MODELS = {"anthropic": ANTHROPIC_DEFAULT_MODEL, "gemini": GEMINI_DEFAULT_MODEL, "ollama": OLLAMA_DEFAULT_MODEL,
                   "simulated": "simulated-agent"}
 
 __all__ = [
     "PROVIDERS", "DEFAULT_MODELS", "LLMProvider", "LLMResponse", "ToolCall", "ToolSpec", "TokenUsage", "Turn",
     "ProviderError", "ProviderConfigError", "ProviderUnavailableError", "ProviderRefusal",
-    "ScriptedProvider", "SimulatedInjectionProvider", "AnthropicProvider", "OllamaProvider",
+    "ScriptedProvider", "SimulatedInjectionProvider", "AnthropicProvider", "GeminiProvider", "OllamaProvider",
     "build_provider", "provider_status", "validate_model",
 ]
 
@@ -54,6 +56,10 @@ def build_provider(name: str, model: str | None, settings: Any) -> LLMProvider:
         return SimulatedInjectionProvider(model=model, susceptible=True)
     if name == "ollama":
         return OllamaProvider(model=model, host=settings.ollama_host)
+    if name == "gemini":
+        # GeminiProvider raises a sanitized ProviderConfigError when no key is configured.
+        return GeminiProvider(model=model, base_url=getattr(settings, "gemini_base_url", None) or None,
+                              min_interval_s=getattr(settings, "gemini_min_interval_s", 0.0))
     if not anthropic_credentials_present() and not settings.anthropic_base_url:
         raise ProviderConfigError("Anthropic is not configured: set ANTHROPIC_API_KEY (or run `ant auth login`)",
                                   kind="missing_credentials")
@@ -71,6 +77,14 @@ def provider_status(settings: Any, *, probe_ollama: bool = True) -> list[dict[st
                    if anthropic_credentials_present()
                    else "Set ANTHROPIC_API_KEY in the backend environment to enable."),
     }]
+    out.append({
+        "provider": "gemini", "label": "Google Gemini", "real": True,
+        "configured": gemini_credentials_present() or bool(getattr(settings, "gemini_base_url", None)),
+        "default_model": DEFAULT_MODELS["gemini"],
+        "detail": ("Credentials detected in the backend environment (value never shown)."
+                   if gemini_credentials_present()
+                   else "Set GEMINI_API_KEY in the backend environment to enable."),
+    })
     reachable = False
     if probe_ollama:
         try:

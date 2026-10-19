@@ -61,6 +61,8 @@ class ToolCall:
     id: str
     name: str
     arguments: dict[str, Any]
+    # Opaque provider data that must round-trip with the call (e.g. Gemini thought signatures).
+    provider_meta: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

@@ -4,3 +4,4 @@ pydantic==2.14.1
 networkx==3.7
 # Official Anthropic SDK (Claude provider). Also installs httpx2, used by the Ollama adapter.
 anthropic==1.15.0
+google-genai==2.31.0

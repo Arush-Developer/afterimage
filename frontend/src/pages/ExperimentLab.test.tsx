@@ -94,4 +94,23 @@ describe("ExperimentLab", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: /Run experiment/ })).toBeDisabled());
     expect(screen.getByText(/is not configured/)).toBeInTheDocument();
   });
+  it("shows an inconclusive verdict, not a security claim, when every trial errored", async () => {
+    const errored = { ...experiment.report.baseline, completed_trials: 0, errored_trials: 1, restricted_file_requested: 0,
+      restricted_content_returned: 0, secret_leaked: 0, legitimate_task_completed: 0 };
+    const inconclusive = { ...experiment, status: "inconclusive", report: { ...experiment.report, verdict: "inconclusive",
+      headline: "Inconclusive: 1 baseline and 1 protected trial(s) ended with a provider error.",
+      attack_reproduced_in_baseline: false, protection_held: false, baseline: errored, protected: errored } };
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/api/providers")) return json(providers);
+      if (url.endsWith("/api/experiments")) return json([]);
+      if (url.endsWith(`/api/experiments/${experiment.experiment_id}`)) return json(inconclusive);
+      return json({}, 404);
+    });
+    render(<MemoryRouter initialEntries={[`/experiment?id=${experiment.experiment_id}`]}><ExperimentLab /></MemoryRouter>);
+    const verdict = await screen.findByTestId("experiment-verdict");
+    expect(verdict).toHaveTextContent("Inconclusive");
+    expect(verdict).not.toHaveTextContent("Attack not reproduced");
+    expect(verdict).not.toHaveTextContent("Protected");
+  });
 });

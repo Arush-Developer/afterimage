@@ -23,7 +23,7 @@ Audited by searching the backend for filesystem, network and process APIs (`os.o
 | `recovery.py` | No (operator API) | Fixed allow-list of vault files; secret-like names always rejected. |
 | `main.py` reset (`shutil.rmtree`) | No (operator API) | Fixed data directories; typed confirmation; refused while an experiment runs. |
 | `config.py` `.env` read | No | Server configuration. |
-| Anthropic SDK / Ollama `httpx2` calls | No | Operator-configured endpoint only. |
+| Anthropic SDK / Google Gen AI SDK / Ollama `httpx2` calls | No | Operator-configured endpoint only. |
 | `subprocess`, `eval`, `exec` | — | Not used anywhere. |
 
 **Remaining bypass risks (not claimed to be solved):**
@@ -79,6 +79,7 @@ Audited by searching the backend for filesystem, network and process APIs (`os.o
 - **No authentication or authorization of human users.** Anyone who can reach the API can use it. Keep it on `localhost`.
 - **No encryption at rest.** The database and synthetic workspaces are plain files. (All data is synthetic.)
 - **Two agents.** The scripted agent is deterministic and deliberately gullible; it is the regression baseline. The LLM agent is real, but whether a given model follows the injection is probabilistic and is measured per trial. Neither result says anything about a model's general robustness.
+- **Gemini.** The Gemini adapter is tested through the official `google-genai` SDK against a local mock server and was exercised live against `gemini-3.8-flash` (see the live test report). Provider error messages are sanitized of key-like strings, and the log filter also scrubs credential-shaped strings. On the Gemini free tier (5 requests/minute for this model), set `AFTERIMAGE_GEMINI_MIN_INTERVAL_S=13` to pace agent steps; AFTERIMAGE never auto-retries billable calls.
 - **Real-provider verification.** The Anthropic adapter is tested through the official SDK against a local mock HTTP server. A run against the live API was not possible in the development environment (no key), and the Ollama adapter is untested against a live server.
 - **Causality is inferred.** The trigger document is identified from agent-reported provenance, ordering and a heuristic content scanner. The UI labels this *inferred*. A real agent runtime would need trustworthy provenance instrumentation.
 - **The instruction scanner is a heuristic** (three regular expressions). It is used for observation only and never blocks anything.

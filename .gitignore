@@ -27,3 +27,6 @@ frontend/playwright-report/
 .vscode/
 .idea/
 *.tsbuildinfo
+
+# Generated test reports, screenshots and logs
+artifacts/

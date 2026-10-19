@@ -449,7 +449,7 @@ export interface TrialAggregate {
 }
 
 export interface ExperimentReport {
-  verdict: "protected" | "protection_failed" | "attack_not_reproduced";
+  verdict: "protected" | "protection_failed" | "attack_not_reproduced" | "inconclusive";
   headline: string;
   provider: string;
   model: string;

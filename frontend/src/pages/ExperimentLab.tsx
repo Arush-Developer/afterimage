@@ -16,6 +16,7 @@ function VerdictBanner({ report }: { report: ExperimentReport }) {
     protected: { icon: ShieldCheck, cls: "border-emerald-400/30 bg-emerald-500/10 text-emerald-100", title: "Protected" },
     attack_not_reproduced: { icon: AlertTriangle, cls: "border-amber-400/30 bg-amber-500/10 text-amber-100", title: "Attack not reproduced" },
     protection_failed: { icon: ShieldX, cls: "border-rose-400/30 bg-rose-500/10 text-rose-100", title: "Protection failed" },
+    inconclusive: { icon: AlertTriangle, cls: "border-ink-600 bg-ink-850 text-ink-100", title: "Inconclusive" },
   }[report.verdict];
   const Icon = cfg.icon;
   return (

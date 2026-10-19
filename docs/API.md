@@ -35,7 +35,7 @@ Every run carries `agent_kind` (`scripted` \| `llm`) and `enforcement` (`protect
 |---|---|---|
 | POST | `/api/experiments` | `{provider?, model?, trials: 1-20 (capped by AFTERIMAGE_LLM_MAX_TRIALS), background?: bool}` → for each trial, one **baseline** (enforcement off) and one **protected** LLM run, each in a fresh workspace. With `background: true` it returns immediately with `status: "running"`, `report: {}`. **201**. |
 | GET | `/api/experiments` | Saved experiments (`status`: `running`, `error`, or the verdict). |
-| GET | `/api/experiments/{id}` | `{status, report, progress: {total_runs, runs: [{run_id, enforcement, status}]}}`. `report.verdict` ∈ `protected`, `protection_failed`, `attack_not_reproduced`; `report.baseline` / `report.protected` aggregate counts (`restricted_file_requested`, `restricted_content_returned`, `secret_leaked`, `legitimate_task_completed`, `errored_trials`); per-trial rows; `notes`; `ground_truth`. |
+| GET | `/api/experiments/{id}` | `{status, report, progress: {total_runs, runs: [{run_id, enforcement, status}]}}`. `report.verdict` ∈ `protected`, `protection_failed`, `attack_not_reproduced`, `inconclusive` (no baseline trial finished, or the attack reproduced but no protected trial finished — provider errors are never turned into a verdict); `report.baseline` / `report.protected` aggregate counts (`restricted_file_requested`, `restricted_content_returned`, `secret_leaked`, `legitimate_task_completed`, `errored_trials`); per-trial rows; `notes`; `ground_truth`. |
 
 ## Incidents
 

@@ -26,7 +26,7 @@ function StatusBanner({ replay }: { replay: Replay }) {
       <div>
         <div className="font-semibold">{cfg.title}</div>
         <p className="mt-0.5 text-sm opacity-90">{cfg.text}</p>
-        {replay.report.notes.map((n) => <p key={n} className="mt-1 text-sm opacity-90">{n}</p>)}
+        {replay.report.notes.filter((n) => n !== cfg.text).map((n) => <p key={n} className="mt-1 text-sm opacity-90">{n}</p>)}
       </div>
     </div>
   );

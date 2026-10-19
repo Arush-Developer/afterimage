@@ -32,6 +32,8 @@ class Settings(BaseModel):
     llm_max_trials: int = Field(default=5, ge=1, le=20)
     ollama_host: str = "http://127.0.0.1:11434"
     anthropic_base_url: str | None = None
+    gemini_base_url: str | None = None
+    gemini_min_interval_s: float = Field(default=0.0, ge=0, le=120)
 
     @field_validator("cors_origins")
     @classmethod
@@ -57,8 +59,8 @@ class Settings(BaseModel):
     @field_validator("llm_provider")
     @classmethod
     def _validate_provider(cls, value: str) -> str:
-        if value not in ("anthropic", "ollama", "simulated"):
-            raise ValueError("AFTERIMAGE_LLM_PROVIDER must be anthropic, ollama or simulated")
+        if value not in ("anthropic", "gemini", "ollama", "simulated"):
+            raise ValueError("AFTERIMAGE_LLM_PROVIDER must be anthropic, gemini, ollama or simulated")
         return value
 
     @field_validator("llm_effort")
@@ -76,7 +78,7 @@ class Settings(BaseModel):
             raise ValueError("AFTERIMAGE_LLM_MODEL contains invalid characters")
         return value or None
 
-    @field_validator("ollama_host", "anthropic_base_url")
+    @field_validator("ollama_host", "anthropic_base_url", "gemini_base_url")
     @classmethod
     def _validate_url(cls, value: str | None) -> str | None:
         if value and not value.startswith(("http://", "https://")):
@@ -138,4 +140,6 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         llm_max_trials=int(env.get("AFTERIMAGE_LLM_MAX_TRIALS", "5")),
         ollama_host=env.get("AFTERIMAGE_OLLAMA_HOST", "http://127.0.0.1:11434"),
         anthropic_base_url=env.get("AFTERIMAGE_ANTHROPIC_BASE_URL") or None,
+        gemini_base_url=env.get("AFTERIMAGE_GEMINI_BASE_URL") or None,
+        gemini_min_interval_s=float(env.get("AFTERIMAGE_GEMINI_MIN_INTERVAL_S", "0") or 0),
     )

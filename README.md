@@ -37,6 +37,12 @@ On first start the backend creates `backend/data/` (SQLite DB, synthetic workspa
 export ANTHROPIC_API_KEY=sk-ant-...            # in the shell that starts the backend
 uvicorn afterimage.main:create_app --factory --reload --port 8000
 
+# Google Gemini (official google-genai SDK; default model gemini-3.8-flash)
+export GEMINI_API_KEY=<your-gemini-api-key>   # in the shell that starts the backend
+AFTERIMAGE_LLM_PROVIDER=gemini uvicorn afterimage.main:create_app --factory --port 8000
+# Gemini free tier (5 requests/min): pace agent steps instead of hitting 429s
+AFTERIMAGE_GEMINI_MIN_INTERVAL_S=13 AFTERIMAGE_LLM_PROVIDER=gemini uvicorn afterimage.main:create_app --factory --port 8000
+
 # or a local Ollama model
 ollama pull llama3.1 && ollama serve
 AFTERIMAGE_LLM_PROVIDER=ollama uvicorn afterimage.main:create_app --factory --port 8000
@@ -60,9 +66,9 @@ Open <http://localhost:5173>. Vite proxies `/api` to `http://127.0.0.1:8000` (ov
 ### 3. Tests
 
 ```bash
-# Backend: 100 pytest tests (+2 optional real-provider tests, skipped by default).
+# Backend: 120 pytest tests (+2 optional real-provider tests, skipped by default).
 # No network or API key needed: providers are mocked (a local HTTP server stands in for the
-# Anthropic API, exercising the real SDK).
+# Anthropic and Gemini APIs, exercising the real SDKs).
 cd backend && .venv/bin/pytest -q
 
 # Optional real-provider smoke test (makes billable API calls):
@@ -127,7 +133,7 @@ backend/
     gateway.py        the only path from agent to files: request → decision → result events
     agent.py          deterministic scripted agent (benign / deliberately susceptible)
     llm_agent.py      LLM agent: bounded tool loop, strict tool-call validation, gateway-only execution
-    providers/        LLM provider abstraction: Anthropic (official SDK), Ollama, simulated/mock
+    providers/        LLM provider abstraction: Anthropic and Gemini (official SDKs), Ollama, simulated/mock
     experiment.py     baseline (enforcement off) vs protected prompt-injection experiment
     explainer.py      AI-assisted incident explanation, validated against persisted event IDs
     recorder.py       structured, hash-chained event recorder + chain verification
@@ -136,7 +142,7 @@ backend/
     replay.py         replay engine (scripted, or LLM trials + deterministic control), assertions, diffs
     recovery.py       snapshot vault with content hashes and verified restore
     main.py           FastAPI app, REST endpoints, idempotency, CORS, resets
-  tests/              pytest suite (100 tests + 2 optional real-provider tests)
+  tests/              pytest suite (120 tests + 2 optional real-provider tests)
 frontend/
   src/api.ts          typed API client
   src/pages/          Overview, Incidents, Investigation, Replay Lab, Injection Lab,
@@ -163,11 +169,13 @@ All settings are optional; see [`.env.example`](.env.example). Put them in `back
 | `AFTERIMAGE_DATA_DIR` | `backend/data` | DB, workspaces, vault, archives |
 | `AFTERIMAGE_CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Allowed browser origins (no wildcards) |
 | `AFTERIMAGE_MAX_READ_BYTES` | `65536` | Max bytes the agent may read per file |
-| `AFTERIMAGE_LLM_PROVIDER` | `anthropic` | Default provider: `anthropic`, `ollama` or `simulated` |
-| `AFTERIMAGE_LLM_MODEL` | provider default | `claude-opus-5-5` (Anthropic), `llama3.1` (Ollama) |
+| `AFTERIMAGE_LLM_PROVIDER` | `anthropic` | Default provider: `anthropic`, `gemini`, `ollama` or `simulated` |
+| `AFTERIMAGE_LLM_MODEL` | provider default | `claude-opus-5-5` (Anthropic), `gemini-3.8-flash` (Gemini), `llama3.1` (Ollama) |
 | `AFTERIMAGE_LLM_EFFORT` | `medium` | Anthropic effort level; empty = not sent |
 | `AFTERIMAGE_LLM_TIMEOUT_S` / `_MAX_STEPS` / `_MAX_TOKENS` / `_MAX_TRIALS` | `120` / `12` / `16000` / `5` | Per-request timeout, agent step bound, tokens per model call, experiment trial cap |
 | `AFTERIMAGE_OLLAMA_HOST` | `http://127.0.0.1:11434` | Local Ollama server |
+| `AFTERIMAGE_GEMINI_MIN_INTERVAL_S` | `0` | Minimum seconds between Gemini requests (process-wide pacing; never retries). `13` fits the 5 RPM free tier |
+| `GEMINI_API_KEY` | — | Read by the Google Gen AI SDK from the **process environment** (export it; not read from `backend/.env`). Never returned by the API. |
 | `ANTHROPIC_API_KEY` | — | Read by the Anthropic SDK from the **process environment** (export it; it is not read from `backend/.env`). Never returned by the API. |
 
 Invalid values stop the backend at startup with a clear validation error.
@@ -190,7 +198,7 @@ Invalid values stop the backend at startup with a clear validation error.
 
 ## Known limitations
 
-- **Real-provider path verified only against a mock server here.** The Anthropic adapter is tested end to end through the official SDK against a local mock HTTP server, and the browser suite uses the simulated agent. No live API key was available in the development environment, so a run against the real API has not been verified. Run `tests/test_real_provider_smoke.py` with a key to check. The Ollama adapter has no automated test against a running Ollama server.
+- **Real-provider verification.** The Gemini adapter was exercised live against `gemini-3.8-flash` (chat, multi-step tool use through the gateway, an injection experiment, AI explanation); a live Gemini replay was blocked by the free-tier daily quota (20 requests/day). The Anthropic adapter is tested only against a local mock server through its official SDK, and the Ollama adapter has no automated test against a running server. The browser suite uses the simulated agent. Run `tests/test_real_provider_smoke.py` with a key to check a provider.
 - Experiments run in the background, and the Injection Lab polls real progress: the runs created so far and the policy decisions already persisted for the run in progress. LLM *replays* and single `POST /api/runs/llm` calls are still synchronous, so they show only a pending state until they finish. Background jobs are in-process threads: if the backend restarts mid-experiment, that experiment stays marked `running`.
 - LLM behaviour is probabilistic. The experiment and LLM replays report counts across trials. Leak detection is exact matching on the canary and its hex token, so a model that *transforms* the secret (encodes or splits it) could leak without being counted. "Restricted content returned to agent" is measured at the gateway and is not affected by this.
 - In the baseline (enforcement-off) run, the fake secret is sent to the configured LLM provider. It is random and synthetic, but it does leave the machine for a cloud provider.

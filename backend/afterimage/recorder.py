@@ -61,15 +61,21 @@ def redact_obj(value: Any, sensitive_values: Iterable[str] = ()) -> Any:
     return _redact(value, tuple(v for v in sensitive_values if v))
 
 
+# Credential-shaped strings (Google/Anthropic API keys, OAuth tokens, key= parameters) are
+# scrubbed from log output as defence in depth; providers already sanitize their messages.
+_CREDENTIAL = re.compile(r"AIza[0-9A-Za-z_-]{20,}|AQ\.[0-9A-Za-z_.-]{20,}|ya29\.[0-9A-Za-z_.-]+|"
+                         r"sk-ant-[0-9A-Za-z_-]{10,}|(?i:key=)[^&\s\"']+")
+
+
 class RedactingLogFilter:
-    """logging.Filter that scrubs the canary pattern from log messages and arguments."""
+    """logging.Filter that scrubs the canary pattern and credentials from log messages and arguments."""
 
     def filter(self, record: Any) -> bool:
         try:
             message = record.getMessage()
         except Exception:
             return True
-        cleaned = _ALWAYS_REDACT.sub(REDACTED, message)
+        cleaned = _CREDENTIAL.sub("[REDACTED:credential]", _ALWAYS_REDACT.sub(REDACTED, message))
         if cleaned != message:
             record.msg, record.args = cleaned, None
         return True

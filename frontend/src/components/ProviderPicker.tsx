@@ -18,7 +18,7 @@ export function ProviderPicker({ data, value, onChange, disabled }: {
   const current = data.providers.find((p) => p.provider === value.provider);
   return (
     <div className="space-y-3">
-      <div className="grid gap-2 sm:grid-cols-3">
+      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
         {data.providers.map((p) => {
           const selected = p.provider === value.provider;
           return (
