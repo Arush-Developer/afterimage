@@ -20,6 +20,16 @@ Requirements: **Python 3.12+** (the pinned `networkx==3.7` requires it) and **No
 
 > **New here?** Read the **[User Manual](docs/USER_MANUAL.md)**: installation on macOS and Windows, every page of the dashboard, a first-time tutorial, the demo script, troubleshooting and limitations. Teammates in a hurry: **[Quick start](docs/QUICK_START.md)**.
 
+### Fastest: one command (macOS / Linux)
+
+```bash
+./run.sh
+```
+
+It checks Python and Node, installs anything missing (first run only), starts the backend and the dashboard, and opens <http://localhost:5173>. Press **Ctrl+C** to stop both. Any `AFTERIMAGE_*` setting can be passed in front, e.g. `AFTERIMAGE_LLM_PROVIDER=simulated ./run.sh`; `AFTERIMAGE_NO_BROWSER=1` skips opening the browser. To use Gemini or Claude, add the key in **Settings → LLM agent configuration → Add API key**.
+
+The manual steps below do the same thing in two terminals.
+
 ### 1. Backend (FastAPI, port 8000)
 
 ```bash
@@ -77,7 +87,7 @@ Open <http://localhost:5173>. Vite proxies `/api` to `http://127.0.0.1:8000` (ov
 ### 3. Tests
 
 ```bash
-# Backend: 137 pytest tests (+6 optional live-provider tests, skipped by default).
+# Backend: 149 pytest tests (+6 optional live-provider tests, skipped by default).
 # No network or API key needed: local mock HTTP servers stand in for the Anthropic and
 # Gemini APIs (exercising the real official SDKs) and for a local Ollama server.
 cd backend && .venv/bin/pytest -q
@@ -157,7 +167,7 @@ backend/
     replay.py         replay engine (scripted, or LLM trials + deterministic control), assertions, diffs
     recovery.py       snapshot vault with content hashes and verified restore
     main.py           FastAPI app, REST endpoints, idempotency, CORS, resets
-  tests/              pytest suite (137 tests + 6 optional live-provider tests)
+  tests/              pytest suite (149 tests + 6 optional live-provider tests)
 frontend/
   src/api.ts          typed API client
   src/pages/          Overview, Incidents, Investigation, Replay Lab, Injection Lab,
@@ -179,7 +189,7 @@ docs/                 architecture, API, security, demo script
 
 ## Configuration
 
-All settings are optional; see [`.env.example`](.env.example). Put `AFTERIMAGE_*` settings in `backend/.env` (e.g. `cp .env.example backend/.env`) or export them. API keys are read from the process environment only.
+All settings are optional; see [`.env.example`](.env.example). Put `AFTERIMAGE_*` settings in `backend/.env` (e.g. `cp .env.example backend/.env`) or export them. API keys come from the process environment, or can be added in **Settings → LLM agent configuration → Add API key** (stored only in the backend; see [Security](docs/SECURITY.md)).
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -194,8 +204,8 @@ All settings are optional; see [`.env.example`](.env.example). Put `AFTERIMAGE_*
 | `AFTERIMAGE_LLM_EFFORT` | `medium` | Anthropic effort level; empty = not sent |
 | `AFTERIMAGE_LLM_TIMEOUT_S` / `_MAX_STEPS` / `_MAX_TOKENS` / `_MAX_TRIALS` | `120` / `12` / `16000` / `5` | Per-request timeout, agent step bound, tokens per model call, experiment trial cap |
 | `AFTERIMAGE_OLLAMA_HOST` | `http://127.0.0.1:11434` | Local Ollama server (loopback only by default) |
-| `GEMINI_API_KEY` | — | Read from the **process environment** only (not `backend/.env`, not `GOOGLE_API_KEY`). Never returned by the API. |
-| `ANTHROPIC_API_KEY` | — | Read by the Anthropic SDK from the **process environment** (export it; it is not read from `backend/.env`). Never returned by the API. |
+| `GEMINI_API_KEY` | — | Process environment, or added in Settings (not `backend/.env`, not `GOOGLE_API_KEY`). Never returned by the API. |
+| `ANTHROPIC_API_KEY` | — | Process environment, or added in Settings (not read from `backend/.env`). Never returned by the API. |
 
 Invalid values stop the backend at startup with a clear validation error.
 

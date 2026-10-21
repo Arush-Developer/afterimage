@@ -86,7 +86,7 @@ class GeminiProvider(LLMProvider):
         super().__init__(model or DEFAULT_MODEL)
         key = api_key if api_key is not None else os.environ.get(API_KEY_ENV)
         if not key:
-            raise ProviderConfigError(f"Gemini is not configured: set {API_KEY_ENV} in the backend environment",
+            raise ProviderConfigError(f"Gemini is not configured: add an API key in Settings or set {API_KEY_ENV} in the backend environment",
                                       kind="missing_credentials")
         try:
             import httpx
@@ -172,7 +172,7 @@ class GeminiProvider(LLMProvider):
                 kind="rate_limit", retryable=True, retry_after_s=delay)
         if code in (401, 403) or "api key not valid" in lowered or "api_key_invalid" in lowered:
             return ProviderConfigError("Gemini rejected the API key (invalid, expired or lacking permission). "
-                                       f"Check {API_KEY_ENV}.", kind="invalid_credentials")
+                                       f"Check the key in Settings or {API_KEY_ENV}.", kind="invalid_credentials")
         if code == 404 or status == "NOT_FOUND":
             return ProviderConfigError(f"Gemini model '{self.model}' is not available to this API key "
                                        "(unknown model, retired, or not enabled for your project/tier). "

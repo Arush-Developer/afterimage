@@ -77,7 +77,7 @@ def build_provider(name: str, model: str | None, settings: Any) -> LLMProvider:
                               rate_limit_retries=settings.gemini_rate_limit_retries,
                               max_retry_wait_s=settings.gemini_max_retry_wait_s)
     if not anthropic_credentials_present() and not settings.anthropic_base_url:
-        raise ProviderConfigError("Anthropic is not configured: set ANTHROPIC_API_KEY (or run `ant auth login`)",
+        raise ProviderConfigError("Anthropic is not configured: add an API key in Settings or set ANTHROPIC_API_KEY (or run `ant auth login`)",
                                   kind="missing_credentials")
     return AnthropicProvider(model=model, effort=settings.llm_effort or None,
                              base_url=settings.anthropic_base_url or None)
@@ -104,12 +104,12 @@ def provider_status(settings: Any, *, probe_ollama: bool = True) -> list[dict[st
         {"provider": "anthropic", "label": LABELS["anthropic"], "real": True, "local": False, "billing": "paid",
          "configured": anthropic_ok, "default_model": models["anthropic"],
          "detail": ("Credentials detected in the backend environment (value never shown)." if anthropic_ok
-                    else "Set ANTHROPIC_API_KEY in the backend environment to enable. Paid API.")},
+                    else "Add an API key below, or set ANTHROPIC_API_KEY in the backend environment. Paid API.")},
         {"provider": "gemini", "label": LABELS["gemini"], "real": True, "local": False, "billing": "free tier or paid",
          "configured": gemini_ok, "default_model": models["gemini"],
          "detail": ("GEMINI_API_KEY detected in the backend environment (value never shown). Free-tier limits "
                     "depend on your Google project; use Check to verify the key and model." if gemini_ok
-                    else "Set GEMINI_API_KEY in the backend environment to enable (a free-tier key works).")},
+                    else "Add an API key below, or set GEMINI_API_KEY in the backend environment (a free-tier key works).")},
         {"provider": "ollama", "label": LABELS["ollama"], "real": True, "local": True, "billing": "local",
          "configured": ollama_ok, "default_model": models["ollama"],
          "detail": (f"Local server at {settings.ollama_host} is " + ("reachable." if ollama_ok else

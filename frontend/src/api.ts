@@ -407,6 +407,14 @@ export interface ProviderStatus {
   configured: boolean;
   default_model: string;
   detail: string;
+  /** Where the API key came from: the backend's environment, or added in Settings (saved / this session only). */
+  key_source?: "environment" | "saved" | "session" | null;
+}
+
+export interface KeyStatus {
+  provider: "anthropic" | "gemini";
+  present: boolean;
+  source: "environment" | "saved" | "session" | null;
 }
 
 export interface ProviderCheck {
@@ -564,6 +572,10 @@ export const api = {
   runEvents: (id: string) => get<AfterEvent[]>(`/api/runs/${id}/events`),
   runTranscript: (id: string) => get<{ run_id: string; transcript: TranscriptEntry[] }>(`/api/runs/${id}/transcript`),
   providers: () => get<ProvidersResponse>("/api/providers"),
+  /** Sends the key to the local backend once. It is never returned by any endpoint. */
+  setApiKey: (provider: "anthropic" | "gemini", api_key: string, remember: boolean) =>
+    post<KeyStatus>(`/api/keys/${provider}`, { api_key, remember }),
+  deleteApiKey: (provider: "anthropic" | "gemini") => post<KeyStatus>(`/api/keys/${provider}/delete`),
   checkProvider: (provider: string, model?: string) =>
     get<ProviderCheck>(`/api/providers/${provider}/check${model ? `?model=${encodeURIComponent(model)}` : ""}`),
   startLlmRun: (body: { provider?: string; model?: string | null; enforcement: "protected" | "baseline" }) =>

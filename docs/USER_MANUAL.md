@@ -209,6 +209,16 @@ If the repository is private, you need to be added as a collaborator. Then sign 
 cd afterimage
 ```
 
+### Shortcut — one command instead of steps 4–10
+
+From the `afterimage` folder:
+
+```bash
+./run.sh
+```
+
+The script checks for Python 3.12+ and Node.js 22.12+, creates `backend/.venv` and installs dependencies when they are missing or changed, starts the backend (port 8000) and the frontend (port 5173), and opens the dashboard. **Ctrl+C** stops both. If a port is busy it tells you and stops. You can put settings in front of it, e.g. `AFTERIMAGE_LLM_PROVIDER=simulated ./run.sh`. Then continue with [Step 11](#step-11--verify-everything-works). The steps below do the same by hand.
+
 ### Step 4 — Create and activate the Python virtual environment (Terminal 1)
 
 A *virtual environment* keeps this project's Python packages separate from the rest of your computer.
@@ -439,7 +449,7 @@ Open <http://localhost:5173> and follow [Step 11 of Chapter 3](#step-11--verify-
 | Kind | Where it goes | Read from `backend/.env`? |
 |---|---|---|
 | **Settings** (`AFTERIMAGE_*` variables): default provider, models, timeouts, ports for Ollama… | `backend/.env` **or** your shell environment | **Yes.** Real environment variables take precedence over the file. |
-| **Secrets** (`GEMINI_API_KEY`, `ANTHROPIC_API_KEY`) | Your **shell environment** only | **No.** Keys placed in `backend/.env` are ignored, and the provider will show *not configured*. |
+| **Secrets** (`GEMINI_API_KEY`, `ANTHROPIC_API_KEY`) | **Settings → Add API key**, or your **shell environment** | **No.** Keys placed in `backend/.env` are ignored, and the provider will show *not configured*. |
 
 All settings are optional. They are listed with defaults in [`.env.example`](../.env.example). Invalid values stop the backend at startup with a clear `ValidationError`.
 
@@ -451,9 +461,22 @@ cp ../.env.example .env
 
 `.env` files are listed in `.gitignore`, so git will not commit them. Check with `git status` before every commit: `backend/.env` must **not** appear.
 
-### 5.2 Protecting API keys
+### 5.2 Adding and protecting API keys
 
-Keys must be present in the environment of the terminal that starts the backend. A safe pattern on macOS/Linux is a private file **outside** the repository:
+**Option A — add the key in the app (easiest).**
+
+1. Open **Settings**. Under **LLM agent configuration → Provider status**, find *Google Gemini* or *Anthropic Claude*.
+2. Click **Add API key**, paste the key into the password field and click **Save key**.
+3. Click **Check** to confirm the key is accepted.
+
+How it is handled:
+- The key is sent once to **your local backend** and placed in its environment. No page or API response ever shows it again; the row only says *key saved on this computer* or *key for this session only*.
+- **Remember on this computer** (ticked by default) saves it in `backend/data/provider_keys.json`, **unencrypted**, readable only by your user account (permissions `600`). `backend/data/` is gitignored. Untick it to keep the key only until the backend stops.
+- **Remove key** deletes it from the backend and from that file. **Replace API key** overwrites it.
+- Keys can only be added from the computer running the backend; requests from other machines are refused.
+- A key exported in the terminal (Option B) takes priority when the backend starts. It cannot be removed from the page: unset it in the terminal and restart.
+
+**Option B — export the key in the terminal.** Keys must be present in the environment of the terminal that starts the backend. A safe pattern on macOS/Linux is a private file **outside** the repository:
 
 1. Create the file (use your own editor if you prefer):
 
@@ -479,7 +502,7 @@ On Windows PowerShell, set a key for the current window only:
 $env:GEMINI_API_KEY = "paste-your-key-here"
 ```
 
-**Rules:** never paste keys into the browser, into `backend/.env`, into the code, into screenshots or into chat messages. AFTERIMAGE never returns key values: the UI only says whether a provider is *configured*. If a key is exposed, revoke it in the provider's console.
+**Rules:** only enter keys in AFTERIMAGE's own **Add API key** field on `localhost`. Never put them in `backend/.env`, in the code, in screenshots or in chat messages. AFTERIMAGE never returns key values: the UI only says whether a provider is *configured*. If a key is exposed, revoke it in the provider's console.
 
 ### 5.3 The four providers
 
@@ -513,7 +536,7 @@ Other relevant settings:
 **Google Gemini**
 
 1. Create an API key for the Gemini API (e.g. in Google AI Studio). A free-tier key can work, but which models and limits are available depends on your Google project, your region and the current date.
-2. Export it in Terminal 1 (see [5.2](#52-protecting-api-keys)), optionally choose a model, and start the backend:
+2. Add it in **Settings → Add API key** next to *Google Gemini* (see [5.2](#52-adding-and-protecting-api-keys)) and skip to step 3. Or export it in Terminal 1, optionally choose a model, and start the backend:
 
 ```bash
 source ~/.afterimage-keys.sh
@@ -785,7 +808,7 @@ The badge at the top reads **Hash chain intact · N events**, or *Hash chain bro
 |---|---|
 | **Local database** | Engine (SQLite), file, size, recorded events, hash-chain status and archives. |
 | **Demo environment** | Synthetic-only data, the scripted agent, scenarios, run workspaces on disk, vault files, allowed CORS origins and version. |
-| **LLM agent configuration** | Default provider and model, effort, max agent steps, max tokens per step, request timeout and max experiment trials. **Provider status** lists each provider with *configured / not configured*, its cloud/local badge, the model it will use, and a **Check** button. Also shows the Ollama host and whether it is restricted to this machine. |
+| **LLM agent configuration** | Default provider and model, effort, max agent steps, max tokens per step, request timeout and max experiment trials. **Provider status** lists each provider with *configured / not configured*, its cloud/local badge, the model it will use, and a **Check** button. *Google Gemini* and *Anthropic Claude* also have **Add API key** / **Replace API key** and **Remove key** ([5.2](#52-adding-and-protecting-api-keys)). Also shows the Ollama host and whether it is restricted to this machine. |
 | **Cloud sync** | *not configured*: not implemented in this prototype. |
 | **Reset** | **Reset demo…** (type `RESET DEMO`) and **Archive & reset…** (type `ARCHIVE AND RESET`). See [15.4](#154-resetting-demo-data-safely). |
 
@@ -1200,7 +1223,9 @@ Run diagnostic commands in the terminal named in each row. "Terminal 1" is the b
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| Provider shows **not configured** even though the key is in `backend/.env` | Keys are only read from the **process environment** | Export the key in Terminal 1 ([5.2](#52-protecting-api-keys)) and restart the backend. |
+| Provider shows **not configured** even though the key is in `backend/.env` | Keys are not read from `backend/.env` | Add it in **Settings → Add API key**, or export it in Terminal 1 and restart the backend ([5.2](#52-adding-and-protecting-api-keys)). |
+| **Remove key** says the key was set in the terminal | It came from the backend's environment, which the page cannot change | Unset it in that terminal (`unset GEMINI_API_KEY`) and restart the backend. |
+| `./run.sh` says **Port 8000 (or 5173) is already in use** | AFTERIMAGE (or something else) is already running | Stop the other copy (Ctrl+C in its terminal), then run again. |
 | `provider_invalid_credentials` | Wrong or revoked key | Generate a new key. |
 | `provider_quota_exhausted` (Gemini) | Free-tier daily/project quota used up | Wait for the reset, pick another model, or enable billing. Not retried, and no fallback. |
 | `provider_rate_limit` | Too many requests per minute | Wait (see the suggested delay), use 1 trial, and avoid repeated clicks. |
@@ -1329,7 +1354,7 @@ npm run test:e2e
 
 Options: `PLAYWRIGHT_CHROMIUM_PATH=/path/to/chrome` to use an existing Chromium; `AFTERIMAGE_PYTHON=/path/to/python` if your venv lives elsewhere.
 
-**Results recorded for this manual (Linux, Python 3.13, Node 22):** backend **137 passed, 6 skipped** (the opt-in live tests); frontend unit **19 passed**; type check clean; production build OK; browser tests **6 passed**.
+**Results recorded for this manual (Linux, Python 3.13, Node 22; re-run on macOS, Python 3.14, Node 26):** backend **149 passed, 6 skipped** (the opt-in live tests); frontend unit **21 passed**; type check clean; production build OK; browser tests **6 passed**.
 
 ### 15.2 Optional live-provider smoke tests
 

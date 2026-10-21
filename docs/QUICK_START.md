@@ -6,6 +6,16 @@ The short version. For explanations, Windows steps, providers and troubleshootin
 
 > Tested by the project on Linux only. macOS uses the same commands (not tested on a Mac). Windows: see [Chapter 4 of the manual](USER_MANUAL.md#chapter-4--installation-on-windows-unverified).
 
+## Fastest: one command (macOS / Linux)
+
+After cloning (step 1), from the `afterimage` folder:
+
+```bash
+./run.sh
+```
+
+It installs what is missing, starts both servers and opens the dashboard. **Ctrl+C** stops everything. Skip to [step 4](#4-check-it-works). For a real model, add your key in **Settings → LLM agent configuration → Add API key**.
+
 ## 1. Get the code
 
 ```bash
@@ -72,7 +82,9 @@ npm run dev
 
 ## 5. Using a real model (optional)
 
-Export the key in **Terminal 1** before starting the backend. Never put keys in files inside the repo; `backend/.env` is **not** read for keys.
+Easiest: open **Settings → LLM agent configuration**, click **Add API key** next to the provider, paste the key and click **Save key**, then click **Check**. Or, instead, export the key in the terminal:
+
+Export the key in **Terminal 1** before starting the backend. Never put keys in files you commit; `backend/.env` is **not** read for keys.
 
 ```bash
 export GEMINI_API_KEY="paste-your-key-here"

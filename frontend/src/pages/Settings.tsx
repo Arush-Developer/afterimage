@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Cloud, Cpu, Database, FlaskRound, RotateCcw, Trash2 } from "lucide-react";
+import { Cloud, Cpu, Database, FlaskRound, KeyRound, RotateCcw, Trash2 } from "lucide-react";
 import { api, type ProviderCheck, type ProviderStatus } from "../api";
 import { CheckResult } from "../components/ProviderPicker";
 import { ProviderWhereBadge } from "../providers";
@@ -7,9 +7,77 @@ import { formatBytes } from "../format";
 import { useAction, useApi } from "../hooks";
 import { Badge, Button, Card, ConfirmDialog, ErrorState, InlineError, KeyValue, Loading, Mono, PageHeader } from "../components/ui";
 
-function ProviderStatusRow({ status, model }: { status: ProviderStatus; model: string }) {
+const KEY_SOURCE_LABEL = {
+  environment: "key from the backend's environment",
+  saved: "key saved on this computer",
+  session: "key for this session only",
+} as const;
+
+/** Write-only key entry: the key goes to the local backend once and is never shown again. */
+function ApiKeyEditor({ provider, label, source, onChanged }: {
+  provider: "anthropic" | "gemini"; label: string; source: ProviderStatus["key_source"]; onChanged: () => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState("");
+  const [remember, setRemember] = useState(true);
+  const save = useAction(async () => {
+    await api.setApiKey(provider, value, remember);
+    setValue("");
+    setOpen(false);
+    await onChanged();
+  });
+  const remove = useAction(async () => {
+    await api.deleteApiKey(provider);
+    await onChanged();
+  });
+  const removable = source === "saved" || source === "session";
+
+  if (!open) {
+    return (
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <Button className="px-2.5 py-1 text-xs" icon={<KeyRound className="size-3.5" aria-hidden />} onClick={() => setOpen(true)}>
+          {source ? "Replace API key" : "Add API key"}
+        </Button>
+        {removable && (
+          <Button variant="ghost" className="px-2 py-1 text-xs" pending={remove.pending} onClick={() => void remove.run()}>
+            Remove key
+          </Button>
+        )}
+        {remove.error && <p role="alert" className="text-xs text-rose-300">{remove.error}</p>}
+      </div>
+    );
+  }
+  return (
+    <form className="mt-2 space-y-2 rounded-lg border border-ink-700 bg-ink-950/60 p-3"
+      onSubmit={(e) => { e.preventDefault(); if (value.trim()) void save.run(); }}>
+      <label className="block text-xs text-ink-300">
+        {label} API key
+        <input type="password" value={value} onChange={(e) => setValue(e.target.value)} autoComplete="off" spellCheck={false}
+          autoFocus placeholder="Paste your key" aria-label={`${label} API key`}
+          className="mt-1 w-full rounded-lg border border-ink-700 bg-ink-950 px-3 py-2 font-mono text-sm text-ink-100 placeholder:text-ink-500" />
+      </label>
+      <label className="flex items-start gap-2 text-xs text-ink-300">
+        <input type="checkbox" className="mt-0.5 accent-[var(--color-accent-500)]" checked={remember}
+          onChange={(e) => setRemember(e.target.checked)} />
+        <span>Remember on this computer (saved unencrypted in <Mono>backend/data/provider_keys.json</Mono>, readable only by
+          your user account). Untick to keep it only until the backend stops.</span>
+      </label>
+      <p className="text-xs text-ink-500">
+        The key is sent only to your local AFTERIMAGE backend and is never shown again or sent to the agent.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <Button type="submit" variant="primary" className="px-3 py-1.5 text-xs" pending={save.pending} disabled={!value.trim()}>Save key</Button>
+        <Button variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => { setValue(""); setOpen(false); }}>Cancel</Button>
+      </div>
+      {save.error && <p role="alert" className="text-xs text-rose-300">{save.error}</p>}
+    </form>
+  );
+}
+
+function ProviderStatusRow({ status, model, onChanged }: { status: ProviderStatus; model: string; onChanged: () => Promise<void> }) {
   const [check, setCheck] = useState<ProviderCheck>();
   const run = useAction(async () => setCheck(await api.checkProvider(status.provider)));
+  const usesKey = status.provider === "anthropic" || status.provider === "gemini";
   return (
     <li className="rounded-lg border border-ink-700 p-3 text-sm">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -22,8 +90,13 @@ function ProviderStatusRow({ status, model }: { status: ProviderStatus; model: s
       <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-ink-400">
         <ProviderWhereBadge provider={status.provider} />
         <span>model <Mono>{model}</Mono></span>
+        {status.key_source && <span>· {KEY_SOURCE_LABEL[status.key_source]}</span>}
       </div>
       <p className="mt-1 text-xs text-ink-400">{status.detail}</p>
+      {usesKey && (
+        <ApiKeyEditor provider={status.provider as "anthropic" | "gemini"} label={status.label} source={status.key_source}
+          onChanged={async () => { setCheck(undefined); await onChanged(); }} />
+      )}
       {check && <div className="mt-2"><CheckResult check={check} /></div>}
       {run.error && <p role="alert" className="mt-1 text-xs text-rose-300">{run.error}</p>}
     </li>
@@ -99,7 +172,7 @@ export function Settings() {
           <div>
             <div className="mb-2 text-xs font-medium text-ink-400">Provider status (credentials never shown)</div>
             <ul className="space-y-2">
-              {s.llm.providers.map((p) => <ProviderStatusRow key={p.provider} status={p} model={s.llm.models[p.provider]} />)}
+              {s.llm.providers.map((p) => <ProviderStatusRow key={p.provider} status={p} model={s.llm.models[p.provider]} onChanged={settings.reload} />)}
             </ul>
             <p className="mt-2 text-xs text-ink-500">
               Ollama host <Mono>{s.llm.ollama_host}</Mono> · {s.llm.ollama_local_only ? "restricted to this machine (loopback only)" : "remote host explicitly allowed"}.

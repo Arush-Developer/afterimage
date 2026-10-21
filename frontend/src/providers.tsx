@@ -50,9 +50,9 @@ export function explainProviderError(code?: string | null, provider?: string | n
         ],
       };
     case "missing_credentials":
-      return { title: `${name} is not configured`, tips: ["Set the API key in the backend environment (never in the browser) and restart the backend.", noFallback] };
+      return { title: `${name} is not configured`, tips: ["Add the API key in Settings → LLM agent configuration, or set it in the backend environment and restart the backend.", noFallback] };
     case "invalid_credentials":
-      return { title: `${name} rejected the API key`, tips: ["Check that the key in the backend environment is valid and not revoked."] };
+      return { title: `${name} rejected the API key`, tips: ["Check that the key (added in Settings or set in the backend environment) is valid and not revoked."] };
     case "model_unavailable":
       return {
         title: "Model not available",
