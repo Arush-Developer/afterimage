@@ -59,3 +59,222 @@ body {
 .grid > * {
   min-width: 0;
 }
+
+.incident-stage {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  padding: clamp(24px, 4vw, 48px);
+  border: 1px solid #344252;
+  border-radius: 28px;
+  background: radial-gradient(ellipse at 48% -25%, #193c4a 0%, transparent 54%),
+    linear-gradient(145deg, #111923 2%, #0b1018 58%, #0a0d14 100%);
+  box-shadow: 0 28px 70px #0009, inset 0 1px 0 #9cdac633;
+}
+
+.incident-stage::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  opacity: .28;
+  background-image: linear-gradient(#6ee7c811 1px, transparent 1px), linear-gradient(90deg, #6ee7c811 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: linear-gradient(to bottom, transparent, black 30%, black 75%, transparent);
+  transform: perspective(650px) rotateX(56deg) scale(1.6);
+  transform-origin: center bottom;
+}
+
+.incident-stage__glow {
+  position: absolute;
+  z-index: -1;
+  width: 45%;
+  height: 170px;
+  left: 28%;
+  bottom: -110px;
+  border-radius: 50%;
+  background: #2eafab66;
+  filter: blur(65px);
+}
+
+.incident-stage__header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 35px;
+}
+
+.incident-stage__eyebrow {
+  margin-bottom: 9px;
+  color: #73e7cd;
+  font: 700 11px var(--font-mono);
+  letter-spacing: .18em;
+}
+
+.incident-stage__header h2 {
+  color: #f2faf9;
+  font-size: clamp(24px, 3vw, 38px);
+  font-weight: 700;
+  line-height: 1.16;
+  letter-spacing: -.035em;
+}
+
+.incident-stage__status {
+  flex: none;
+  padding: 8px 11px;
+  border: 1px solid #527b7c;
+  border-radius: 999px;
+  color: #a5eee0;
+  background: #19383d99;
+  font: 700 10px var(--font-mono);
+  letter-spacing: .1em;
+}
+
+.incident-stage__controls { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
+.incident-stage__play {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1px solid #83f7d1;
+  border-radius: 999px;
+  color: #081b1d;
+  background: linear-gradient(135deg, #adffe4, #38d2bb);
+  box-shadow: 0 0 25px #43eac665, inset 0 1px 0 #fff9;
+  font: 800 11px var(--font-mono);
+  letter-spacing: .08em;
+  cursor: pointer;
+}
+.incident-stage__play:hover { filter: brightness(1.08); }
+.incident-stage__live-dot { width: 9px; height: 9px; border-radius: 50%; background: #0b5852; animation: stage-pulse 1s ease-in-out infinite; }
+
+.incident-stage__steps {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px minmax(0, 1fr) 28px minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(9px, 1.5vw, 22px);
+}
+
+.incident-stage__step {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 205px;
+  flex-direction: column;
+  padding: 24px;
+  border: 1px solid #63778870;
+  border-radius: 17px;
+  background: linear-gradient(145deg, #283543ee, #131d29f5 60%, #101823f5);
+  box-shadow: 0 18px 0 -10px #050a10, 0 28px 40px #0008, inset 0 1px 0 #d9ffff29;
+  transform: perspective(900px) rotateX(3deg);
+  text-align: left;
+  cursor: pointer;
+  transition: box-shadow .3s, border-color .3s, transform .3s, opacity .3s;
+}
+
+.incident-stage__step:hover { transform: perspective(900px) rotateX(0) translateY(-5px); }
+.incident-stage__step[data-state="future"] { opacity: .62; }
+.incident-stage__step[data-state="active"] {
+  transform: perspective(900px) rotateX(0) translateY(-8px);
+  border-color: #c6fff0;
+  box-shadow: 0 20px 0 -11px #071316, 0 34px 45px #0009, 0 0 0 1px #dcfff766, 0 0 42px #70ffe077, inset 0 1px 0 #fff8;
+  animation: stage-breathe 1.7s ease-in-out infinite;
+}
+
+.incident-stage__step--decision {
+  border-color: #ee667a99;
+  background: linear-gradient(145deg, #533543ee, #241c2cf5 60%, #171421f5);
+  box-shadow: 0 18px 0 -10px #14080e, 0 28px 42px #0008, 0 0 40px #d6456430, inset 0 1px 0 #ffdce529;
+}
+
+.incident-stage__step--result {
+  border-color: #56d9b9a3;
+  background: linear-gradient(145deg, #1e494aee, #142b33f5 60%, #101d26f5);
+  box-shadow: 0 18px 0 -10px #071316, 0 28px 42px #0008, 0 0 45px #29cba932, inset 0 1px 0 #d9ffff29;
+}
+
+.incident-stage__index {
+  color: #c3d1dc;
+  font: 700 11px var(--font-mono);
+  letter-spacing: .1em;
+}
+
+.incident-stage__step strong {
+  margin-top: 22px;
+  color: white;
+  font-size: clamp(19px, 2vw, 27px);
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.incident-stage__step code {
+  max-width: 100%;
+  margin-top: 10px;
+  padding: 6px 8px;
+  border: 1px solid #ffffff1c;
+  border-radius: 6px;
+  color: #bdf8e7;
+  background: #06101999;
+  font: 12px var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.incident-stage__step--decision code { color: #ffc4d0; }
+
+.incident-stage__foot {
+  margin-top: auto;
+  padding-top: 16px;
+  color: #a7bac4;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.incident-stage__time {
+  margin-top: 11px;
+  color: #e6fff9;
+  font: 700 10px var(--font-mono);
+  letter-spacing: .1em;
+}
+
+.incident-stage__connector {
+  color: #54666b;
+  font-size: 29px;
+  text-align: center;
+  text-shadow: 0 0 17px #51e3c9;
+}
+
+.incident-stage__connector[data-lit="true"] { color: #8be8d3; }
+.incident-stage__progress {
+  height: 3px;
+  margin-top: 34px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: #46606688;
+}
+.incident-stage__progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #77d1ff, #82fadd);
+  box-shadow: 0 0 16px #85ffe9;
+  transition: width .6s ease;
+}
+.incident-stage__disclosure {
+  margin-top: 11px;
+  color: #aec5c8;
+  font: 11px var(--font-mono);
+}
+@keyframes stage-pulse { 50% { opacity: .35; transform: scale(.75); } }
+@keyframes stage-breathe { 50% { filter: brightness(1.18); } }
+@media (prefers-reduced-motion: reduce) {
+  .incident-stage__step, .incident-stage__progress span { transition: none; }
+  .incident-stage__step[data-state="active"], .incident-stage__live-dot { animation: none; }
+}
+
+@media (max-width: 850px) {
+  .incident-stage__header { flex-direction: column; }
+  .incident-stage__steps { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .incident-stage__step, .incident-stage__step[data-state="active"] { min-height: 170px; transform: none; }
+  .incident-stage__connector { transform: rotate(90deg); line-height: 18px; }
+}
