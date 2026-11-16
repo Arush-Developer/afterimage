@@ -32,6 +32,7 @@ from .recorder import EventRecorder, RedactingLogFilter, deserialize_event
 from .recovery import VAULT_FILES, RecoveryVault
 from .experiment import ExperimentService
 from .explainer import IncidentExplainer
+from .keystore import KeyStore, KeyStoreError
 from .providers import (ProviderConfigError, ProviderError as LLMProviderError, build_provider,
                         check_provider, provider_status, resolved_models)
 from .replay import ReplayService
@@ -103,6 +104,12 @@ class RestoreRequest(BaseModel):
     confirm: Literal[True]
 
 
+class ApiKeyRequest(BaseModel):
+    # Deliberately unconstrained here: a pydantic length error would echo the value back.
+    api_key: str
+    remember: bool = True
+
+
 class AnnotationRequest(BaseModel):
     text: str = Field(min_length=1, max_length=500)
     status: Literal["open", "investigating", "contained", "exposure_confirmed", "resolved"] | None = None
@@ -120,6 +127,7 @@ class AppContext:
     def __init__(self, settings: Settings):
         self.settings = settings
         self.mutation_lock = threading.RLock()
+        self.keys = KeyStore(settings.data_dir)
         self._open()
 
     def _open(self) -> None:
@@ -335,9 +343,57 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 c: AppContext = Depends(ctx)) -> JSONResponse:
         return idempotent(c, idempotency_key, "runs/llm", lambda: _start_llm_run(c, body), 201)
 
+    def providers_with_keys(c: AppContext) -> list[dict[str, Any]]:
+        keys = c.keys.status()
+        items = provider_status(c.settings)
+        for item in items:
+            key = keys.get(item["provider"])
+            item["key_source"] = key["source"] if key else None
+            if key and key["source"] in ("saved", "session"):
+                item["detail"] = ("API key added in Settings" + (" and saved on this computer" if key["source"] == "saved"
+                                  else " for this session only") + " (value never shown). Use Check to verify it.")
+        return items
+
+    def require_local_json(request: Request) -> None:
+        # Keys may only be managed from this machine, and only with a JSON body (a cross-site
+        # form post cannot set that content type without a CORS preflight, which is refused).
+        host = request.client.host if request.client else ""
+        if host not in ("127.0.0.1", "::1", "localhost", "testclient"):
+            raise AfterimageError("API keys can only be managed from the computer running the backend")
+        if not request.headers.get("content-type", "").startswith("application/json"):
+            raise ValidationFailure("expected a JSON request body")
+
+    @app.get("/api/keys")
+    def key_status(c: AppContext = Depends(ctx)) -> dict[str, Any]:
+        """Which providers have an API key, and where it came from. Never returns key material."""
+        return {"keys": c.keys.status(), "file": f"backend/data/{c.keys.path.name}"}
+
+    @app.post("/api/keys/{provider}")
+    def set_key(body: ApiKeyRequest, request: Request, provider: str = Path(pattern=r"^(anthropic|gemini)$"),
+                c: AppContext = Depends(ctx)) -> dict[str, Any]:
+        require_local_json(request)
+        try:
+            c.keys.set(provider, body.api_key, remember=body.remember)
+        except KeyStoreError as exc:
+            raise ValidationFailure(str(exc)) from None
+        log.info("API key for %s set from the Settings page (%s)", provider,
+                 "saved on disk" if body.remember else "session only")
+        return {"provider": provider, **c.keys.status()[provider]}
+
+    @app.post("/api/keys/{provider}/delete")
+    def delete_key(request: Request, provider: str = Path(pattern=r"^(anthropic|gemini)$"),
+                   c: AppContext = Depends(ctx)) -> dict[str, Any]:
+        require_local_json(request)
+        try:
+            c.keys.remove(provider)
+        except KeyStoreError as exc:
+            raise ConflictError(str(exc)) from None
+        log.info("API key for %s removed from the Settings page", provider)
+        return {"provider": provider, **c.keys.status()[provider]}
+
     @app.get("/api/providers")
     def providers(c: AppContext = Depends(ctx)) -> dict[str, Any]:
-        return {"providers": provider_status(c.settings), "default_provider": c.settings.llm_provider,
+        return {"providers": providers_with_keys(c), "default_provider": c.settings.llm_provider,
                 "default_models": resolved_models(c.settings), "configured_model": c.settings.llm_model,
                 "max_trials": c.settings.llm_max_trials, "max_steps": c.settings.llm_max_steps}
 
@@ -543,8 +599,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "ollama_local_only": not s.ollama_allow_remote,
                     "effort": s.llm_effort, "max_steps": s.llm_max_steps, "max_tokens": s.llm_max_tokens,
                     "timeout_s": s.llm_timeout_s, "max_trials": s.llm_max_trials,
-                    "providers": provider_status(s),
-                    "note": "Credentials live only in the backend environment and are never returned by the API."},
+                    "providers": providers_with_keys(c),
+                    "note": "API keys stay in the backend (set in its environment or added here) and are never "
+                            "returned by the API."},
             "cors_origins": s.cors_origins,
             "cloud_sync": {"status": "not_configured",
                            "detail": "Optional Supabase sync is not implemented in this prototype. All data stays local."},

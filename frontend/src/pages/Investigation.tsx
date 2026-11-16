@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowRight, Eye, FlaskConical, HelpCircle, Lightbulb, MessageSquarePlus, Network, Shield } from "lucide-react";
+import { ArrowRight, Eye, FlaskConical, HelpCircle, Lightbulb, MessageSquarePlus, Network, Play, RotateCcw, Shield } from "lucide-react";
 import { api, type AfterEvent, type GraphNode } from "../api";
 import { formatClock, formatTime, humanize } from "../format";
 import { useAction, useApi } from "../hooks";
@@ -45,6 +45,15 @@ function IncidentWorkspace({ incidentId, incidentIds }: { incidentId: string; in
   const graph = useApi(() => api.incidentGraph(incidentId), [incidentId]);
   const events = useApi(() => api.incidentEvents(incidentId), [incidentId]);
   const [selected, setSelected] = useState<string>();
+  const [playStep, setPlayStep] = useState(0);
+  const [playing, setPlaying] = useState(false);
+
+  useEffect(() => {
+    if (!playing) return;
+    if (playStep >= 2) { setPlaying(false); return; }
+    const timer = window.setTimeout(() => setPlayStep((step) => step + 1), 1450);
+    return () => window.clearTimeout(timer);
+  }, [playing, playStep]);
 
   const nodesById = useMemo(() => new Map((graph.data?.nodes ?? []).map((n) => [n.id, n])), [graph.data]);
   const eventsById = useMemo(() => new Map((events.data ?? []).map((e) => [e.event_id, e])), [events.data]);
@@ -59,6 +68,13 @@ function IncidentWorkspace({ incidentId, incidentIds }: { incidentId: string; in
   const r = report.data;
   const inc = r.incident;
   const primary = r.attempts[0];
+  const playEvents = primary ? [primary.request_event_id, primary.decision_event_id, primary.result_event_id] : [];
+  const chooseStep = (step: number) => {
+    setPlaying(false);
+    setPlayStep(step);
+    const id = playEvents[step];
+    if (id) setSelected(id);
+  };
   const selectedEvent = selected ? eventsById.get(selected) : undefined;
   const selectedNode = selected ? nodesById.get(selected) : undefined;
   const remediateHref = `/policies?changes=${r.recommendation.change_ids.join(",")}&incident=${inc.incident_id}`;
@@ -80,6 +96,54 @@ function IncidentWorkspace({ incidentId, incidentIds }: { incidentId: string; in
         </>}
       />
       {r.simulated && <SimulatedNotice>Controlled simulated attack: the demo agent was deliberately configured to follow instructions embedded in a synthetic document. This is not a real-world intrusion.</SimulatedNotice>}
+
+      {primary && (
+        <section className="incident-stage" aria-label="Incident path">
+          <div className="incident-stage__glow" aria-hidden="true" />
+          <div className="incident-stage__header">
+            <div>
+              <p className="incident-stage__eyebrow">AFTERIMAGE / INCIDENT PATH</p>
+              <h2>One request. One decision. A provable result.</h2>
+            </div>
+            <div className="incident-stage__controls">
+              <span className="incident-stage__status">{r.simulated ? "CONTROLLED SIMULATION" : "RECORDED RUN"}</span>
+              <button className="incident-stage__play" onClick={() => { setPlayStep(0); setPlaying(true); }} aria-label="Play recorded incident path">
+                {playing ? <span className="incident-stage__live-dot" /> : playStep === 2 ? <RotateCcw size={16} /> : <Play size={16} fill="currentColor" />}
+                {playing ? "PLAYING" : playStep === 2 ? "REPLAY PATH" : "PLAY PATH"}
+              </button>
+            </div>
+          </div>
+          <div className="incident-stage__steps">
+            <button type="button" onClick={() => chooseStep(0)} className="incident-stage__step incident-stage__step--request" data-state={playStep === 0 ? "active" : "past"} aria-current={playStep === 0 ? "step" : undefined}>
+              <span className="incident-stage__index">01 / AGENT REQUEST</span>
+              <strong>{primary.tool}</strong>
+              <code title={primary.requested_path}>{primary.requested_path}</code>
+              <span className="incident-stage__foot">Untrusted content can suggest an action</span>
+              <span className="incident-stage__time">{eventsById.get(primary.request_event_id) ? formatClock(eventsById.get(primary.request_event_id)!.timestamp) : "RECORDED"}</span>
+            </button>
+            <div className="incident-stage__connector" data-lit={playStep >= 1} aria-hidden="true">→</div>
+            <button type="button" onClick={() => chooseStep(1)} className="incident-stage__step incident-stage__step--decision" data-state={playStep === 1 ? "active" : playStep > 1 ? "past" : "future"} aria-current={playStep === 1 ? "step" : undefined}>
+              <span className="incident-stage__index">02 / POLICY GATEWAY</span>
+              <strong>{humanize(primary.decision)}</strong>
+              <code title={primary.rule_id ?? undefined}>{primary.rule_id ?? "No matching rule"}</code>
+              <span className="incident-stage__foot">The backend decides before file access</span>
+              <span className="incident-stage__time">{primary.decision_event_id && eventsById.get(primary.decision_event_id) ? formatClock(eventsById.get(primary.decision_event_id)!.timestamp) : "RECORDED"}</span>
+            </button>
+            <div className="incident-stage__connector" data-lit={playStep >= 2} aria-hidden="true">→</div>
+            <button type="button" onClick={() => chooseStep(2)} className="incident-stage__step incident-stage__step--result" data-state={playStep === 2 ? "active" : "future"} aria-current={playStep === 2 ? "step" : undefined}>
+              <span className="incident-stage__index">03 / OBSERVED RESULT</span>
+              <strong>{primary.content_returned ? "Content returned" : "No content returned"}</strong>
+              <code>{primary.bytes_returned ?? 0} bytes returned</code>
+              <span className="incident-stage__foot">Backed by linked, persisted events</span>
+              <span className="incident-stage__time">{primary.result_event_id && eventsById.get(primary.result_event_id) ? formatClock(eventsById.get(primary.result_event_id)!.timestamp) : "RECORDED"}</span>
+            </button>
+          </div>
+          <div className="incident-stage__progress" aria-label={`Incident path step ${playStep + 1} of 3`}>
+            <span style={{ width: `${((playStep + 1) / 3) * 100}%` }} />
+          </div>
+          <p className="incident-stage__disclosure">Playback of stored events · Click a stage to inspect its evidence</p>
+        </section>
+      )}
 
       <div className="grid gap-6 xl:grid-cols-[1.4fr_1fr]">
         <Card title="Incident summary">
