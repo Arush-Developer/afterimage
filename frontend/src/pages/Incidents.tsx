@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, ShieldAlert } from "lucide-react";
+import { Search, ShieldAlert, ArrowUpRight } from "lucide-react";
 import { api, type Severity } from "../api";
 import { formatTime, humanize } from "../format";
 import { useApi } from "../hooks";
@@ -23,17 +23,17 @@ export function Incidents() {
       (!q || [i.title, i.incident_id, i.run_id, i.resource_id, i.incident_type, i.rule_id].some((v) => v?.toLowerCase().includes(q))));
   }, [incidents.data, query, severity, status]);
 
-  const select = "rounded-lg border border-ink-700 bg-ink-900 px-3 py-2 text-sm text-ink-100";
+  const select = "rounded-lg border border-ink-700 bg-ink-900 px-3 py-2 text-sm text-ink-100 outline-none focus:border-accent-400";
   return (
-    <div>
+    <div className="space-y-6">
       <PageHeader title="Incidents" description="Incidents are opened automatically when a run records a request for a restricted resource, a workspace-boundary violation, or a data exposure." />
       <Card bodyClassName="p-0">
-        <div className="flex flex-wrap items-center gap-3 border-b border-ink-800 p-4">
+        <div className="flex flex-wrap items-center gap-3 border-b border-ink-800/80 p-4">
           <label className="relative min-w-[220px] flex-1">
             <span className="sr-only">Search incidents</span>
             <Search className="pointer-events-none absolute top-2.5 left-3 size-4 text-ink-500" aria-hidden />
             <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search title, ID, resource, rule…"
-              className="w-full rounded-lg border border-ink-700 bg-ink-900 py-2 pr-3 pl-9 text-sm text-ink-100 placeholder:text-ink-500" />
+              className="w-full rounded-lg border border-ink-700 bg-ink-900 py-2 pr-3 pl-9 text-sm text-ink-100 placeholder:text-ink-500 outline-none focus:border-accent-400" />
           </label>
           <label className="text-sm"><span className="sr-only">Severity</span>
             <select aria-label="Filter by severity" className={select} value={severity} onChange={(e) => setSeverity(e.target.value)}>
@@ -58,27 +58,32 @@ export function Incidents() {
         {rows.length > 0 && (
           <div className="scroll-thin overflow-x-auto">
             <table className="w-full min-w-[960px] text-sm">
-              <thead className="text-left text-xs text-ink-400">
-                <tr className="border-b border-ink-800">
-                  <th className="px-5 py-2.5 font-medium">Severity</th><th className="font-medium">Incident</th><th className="font-medium">Resource</th>
-                  <th className="font-medium">Detected</th><th className="font-medium">Run</th><th className="font-medium">Status</th><th className="pr-5 font-medium">Investigation</th>
+              <thead className="text-left text-xs font-semibold text-ink-400 bg-ink-950/40">
+                <tr className="border-b border-ink-800/80">
+                  <th className="px-5 py-3">Severity</th>
+                  <th className="py-3">Incident</th>
+                  <th className="py-3">Resource</th>
+                  <th className="py-3">Detected</th>
+                  <th className="py-3">Run</th>
+                  <th className="py-3">Status</th>
+                  <th className="pr-5 py-3">Investigation</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-ink-800">
+              <tbody className="divide-y divide-ink-800/60">
                 {rows.map((i) => (
                   <tr key={i.incident_id} tabIndex={0} onClick={() => navigate(`/investigation/${i.incident_id}`)}
                     onKeyDown={(e) => e.key === "Enter" && navigate(`/investigation/${i.incident_id}`)}
-                    className="cursor-pointer hover:bg-ink-850">
-                    <td className="px-5 py-3"><SeverityBadge severity={i.severity} /></td>
+                    className="cursor-pointer hover:bg-ink-850/50 transition-colors">
+                    <td className="px-5 py-3.5"><SeverityBadge severity={i.severity} /></td>
                     <td className="max-w-[340px]">
-                      <div className="truncate text-ink-100">{i.title}</div>
-                      <div className="text-xs text-ink-400">{humanize(i.incident_type)} · <span className="font-mono">{i.incident_id}</span></div>
+                      <div className="truncate font-semibold text-ink-100">{i.title}</div>
+                      <div className="text-xs text-ink-400 mt-0.5">{humanize(i.incident_type)} · <span className="font-mono">{i.incident_id}</span></div>
                     </td>
-                    <td className="font-mono text-xs">{i.resource_id}</td>
-                    <td className="text-ink-300">{formatTime(i.created_at)}</td>
+                    <td className="font-mono text-xs text-ink-300">{i.resource_id}</td>
+                    <td className="text-ink-400 text-xs font-mono">{formatTime(i.created_at)}</td>
                     <td><span className="font-mono text-xs">{i.run_id}</span>{i.run_kind === "replay" && <Badge className="ml-2" tone="accent">replay</Badge>}</td>
                     <td><Badge tone={i.status === "exposure_confirmed" ? "bad" : i.status === "contained" ? "good" : "neutral"}>{humanize(i.status)}</Badge></td>
-                    <td className="pr-5">{i.investigation_available ? <span className="text-accent-300">Open · {i.evidence_count} events</span> : <span className="text-ink-500">No evidence</span>}</td>
+                    <td className="pr-5">{i.investigation_available ? <span className="text-accent-400 font-medium inline-flex items-center gap-1 hover:text-accent-300">Open · {i.evidence_count} events <ArrowUpRight className="size-3" /></span> : <span className="text-ink-500">No evidence</span>}</td>
                   </tr>
                 ))}
               </tbody>

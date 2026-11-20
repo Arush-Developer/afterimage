@@ -53,15 +53,17 @@ export function RecoveryVault() {
 
       <div className="grid gap-6 xl:grid-cols-[380px_1fr]">
         <Card title="Protected files" bodyClassName="p-0">
-          <ul className="divide-y divide-ink-800">
+          <ul className="divide-y divide-ink-800/60">
             {files.data.map((f) => (
               <li key={f.path}>
                 <button onClick={() => { setPath(f.path); setSelected(undefined); setResult(undefined); }}
-                  className={cx("w-full px-5 py-3 text-left hover:bg-ink-850", activePath === f.path && "bg-ink-850")}>
-                  <div className="flex items-center gap-2 text-sm"><FileCode2 className="size-4 text-ink-400" aria-hidden /><span className="font-mono">{f.path}</span></div>
-                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-ink-400">
-                    <span className="font-mono">{shortHash(f.sha256)}</span>
+                  className={cx("w-full px-5 py-3.5 text-left hover:bg-ink-850/50 transition-colors", activePath === f.path && "bg-ink-850/80")}>
+                  <div className="flex items-center gap-2 text-sm font-medium"><FileCode2 className="size-4 text-ink-400" aria-hidden /><span className="font-mono text-ink-200">{f.path}</span></div>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-ink-400 font-mono">
+                    <span>{shortHash(f.sha256)}</span>
+                    <span>·</span>
                     <span>{formatBytes(f.size_bytes)}</span>
+                    <span>·</span>
                     <span>{f.snapshot_count} snapshot{f.snapshot_count === 1 ? "" : "s"}</span>
                     {f.matches_original ? <Badge tone="good">matches original</Badge> : <Badge tone="warn">modified</Badge>}
                   </div>
@@ -73,7 +75,7 @@ export function RecoveryVault() {
 
         <div className="space-y-6">
           {current && (
-            <Card title={<span className="font-mono">{current.path}</span>} subtitle={<>Current SHA-256 <span className="font-mono break-all">{current.sha256}</span></>}
+            <Card title={<span className="font-mono">{current.path}</span>} subtitle={<>Current SHA-256 <span className="font-mono break-all text-ink-300">{current.sha256}</span></>}
               actions={<>
                 <Button onClick={() => void snapshotNow.run(current.path)} pending={snapshotNow.pending} icon={<Camera className="size-4" />}>Snapshot now</Button>
                 <Button variant="danger" onClick={() => void simulate.run(current.path)} pending={simulate.pending} disabled={!current.matches_original}
@@ -86,13 +88,13 @@ export function RecoveryVault() {
                   {versions.map((s) => (
                     <li key={s.snapshot_id}>
                       <button onClick={() => void open.run(s.snapshot_id)}
-                        className={cx("flex w-full flex-wrap items-center gap-3 rounded-lg border px-3 py-2 text-left text-sm",
-                          selected?.snapshot_id === s.snapshot_id ? "border-accent-500/50 bg-accent-500/5" : "border-ink-700 hover:border-ink-600")}>
-                        <span className="font-semibold tabular-nums">v{s.version}</span>
+                        className={cx("flex w-full flex-wrap items-center gap-3 rounded-xl border px-3.5 py-2.5 text-left text-sm transition-all",
+                          selected?.snapshot_id === s.snapshot_id ? "border-accent-500/60 bg-accent-500/5 shadow-xs" : "border-ink-800 bg-ink-950/40 hover:border-ink-700")}>
+                        <span className="font-bold tabular-nums text-ink-100">v{s.version}</span>
                         <span className="font-mono text-xs text-ink-300">{shortHash(s.sha256, 16)}</span>
                         <span className="flex-1 text-xs text-ink-400">{s.reason}</span>
                         {s.sha256 === current.sha256 && <Badge tone="good">= current</Badge>}
-                        <span className="text-xs text-ink-500">{formatTime(s.created_at)}</span>
+                        <span className="text-xs text-ink-500 tabular-nums font-mono">{formatTime(s.created_at)}</span>
                       </button>
                     </li>
                   ))}
@@ -106,20 +108,20 @@ export function RecoveryVault() {
               actions={<Button variant="primary" onClick={() => setConfirm(true)} disabled={selected.current_sha256 === selected.sha256} icon={<RotateCcw className="size-4" />}>Restore this version…</Button>}>
               <div className="grid gap-4 lg:grid-cols-2">
                 <div>
-                  <div className="mb-1 text-xs font-medium text-ink-400">Snapshot content (synthetic)</div>
-                  <pre className="scroll-thin max-h-64 overflow-auto rounded-lg bg-ink-950 p-3 font-mono text-[11px] leading-relaxed text-ink-200">{selected.content}</pre>
+                  <div className="mb-1.5 text-xs font-semibold text-ink-400">Snapshot content (synthetic)</div>
+                  <pre className="scroll-thin max-h-64 overflow-auto rounded-lg bg-ink-950 p-3.5 font-mono text-[11px] leading-relaxed text-ink-200 border border-ink-800/80">{selected.content}</pre>
                 </div>
                 <div>
-                  <div className="mb-1 text-xs font-medium text-ink-400">Diff: current file → snapshot</div>
-                  <pre className="scroll-thin max-h-64 overflow-auto rounded-lg bg-ink-950 p-3 font-mono text-[11px] leading-relaxed">
+                  <div className="mb-1.5 text-xs font-semibold text-ink-400">Diff: current file → snapshot</div>
+                  <pre className="scroll-thin max-h-64 overflow-auto rounded-lg bg-ink-950 p-3.5 font-mono text-[11px] leading-relaxed border border-ink-800/80">
                     {selected.diff_to_current ? selected.diff_to_current.split("\n").map((l, i) => (
-                      <span key={i} className={cx("block", l.startsWith("+") && !l.startsWith("+++") ? "text-emerald-300" : l.startsWith("-") && !l.startsWith("---") ? "text-rose-300" : "text-ink-400")}>{l || " "}</span>
-                    )) : <span className="text-ink-400">No differences — the current file matches this snapshot.</span>}
+                      <span key={i} className={cx("block", l.startsWith("+") && !l.startsWith("+++") ? "text-emerald-400" : l.startsWith("-") && !l.startsWith("---") ? "text-rose-400" : "text-ink-400")}>{l || " "}</span>
+                    )) : <span className="text-ink-500">No differences — the current file matches this snapshot.</span>}
                   </pre>
                 </div>
               </div>
-              <div className="mt-3 flex flex-wrap gap-4 text-xs text-ink-400">
-                <span>Stored object integrity: {selected.store_integrity_ok ? <span className="text-emerald-300">hash verified</span> : <span className="text-rose-300">FAILED</span>}</span>
+              <div className="mt-3.5 pt-3 border-t border-ink-800/60 flex flex-wrap gap-4 text-xs text-ink-400">
+                <span>Stored object integrity: {selected.store_integrity_ok ? <span className="text-emerald-400 font-medium">hash verified</span> : <span className="text-rose-400 font-medium">FAILED</span>}</span>
                 <span>Size: {formatBytes(selected.size_bytes)}</span>
               </div>
             </Card>
@@ -127,15 +129,15 @@ export function RecoveryVault() {
 
           {result && (
             <Card title="Recovery result" subtitle={result.note}>
-              <div data-testid="restore-result" className={cx("mb-4 flex items-center gap-2 text-sm font-medium", result.verified ? "text-emerald-300" : "text-rose-300")}>
+              <div data-testid="restore-result" className={cx("mb-4 flex items-center gap-2 text-sm font-semibold", result.verified ? "text-emerald-400" : "text-rose-400")}>
                 {result.verified ? <CheckCircle2 className="size-4" aria-hidden /> : <XCircle className="size-4" aria-hidden />}
                 {result.verified ? "Restored and hash-verified" : "Restore hash mismatch"}
               </div>
               <table className="w-full text-sm">
-                <tbody className="divide-y divide-ink-800">
-                  <tr><th scope="row" className="py-2 pr-4 text-left font-normal text-ink-400">Original version (snapshot v{result.snapshot.version})</th><td className="font-mono text-xs break-all">{result.expected_sha256}</td></tr>
-                  <tr><th scope="row" className="py-2 pr-4 text-left font-normal text-ink-400">Modified version (before restore)</th><td className="font-mono text-xs break-all">{result.before_sha256}</td></tr>
-                  <tr><th scope="row" className="py-2 pr-4 text-left font-normal text-ink-400">Restored version (re-hashed from disk)</th><td className="font-mono text-xs break-all">{result.restored_sha256}</td></tr>
+                <tbody className="divide-y divide-ink-800/60">
+                  <tr><th scope="row" className="py-2.5 pr-4 text-left font-normal text-ink-400">Original version (snapshot v{result.snapshot.version})</th><td className="font-mono text-xs break-all text-ink-200">{result.expected_sha256}</td></tr>
+                  <tr><th scope="row" className="py-2.5 pr-4 text-left font-normal text-ink-400">Modified version (before restore)</th><td className="font-mono text-xs break-all text-ink-200">{result.before_sha256}</td></tr>
+                  <tr><th scope="row" className="py-2.5 pr-4 text-left font-normal text-ink-400">Restored version (re-hashed from disk)</th><td className="font-mono text-xs break-all text-ink-200">{result.restored_sha256}</td></tr>
                 </tbody>
               </table>
               <p className="mt-3 flex items-center gap-2 text-xs text-ink-400"><Info className="size-3.5" aria-hidden />The modified version was saved as snapshot v{result.pre_restore_backup.version} first, so this restore can be undone.</p>

@@ -24,13 +24,13 @@ export function Investigation() {
 
   if (!incidentId) {
     return (
-      <div>
+      <div className="space-y-6">
         <PageHeader title="Investigation" description="Evidence-based reconstruction of an incident from recorded events." />
         {incidents.error && <ErrorState message={incidents.error} onRetry={incidents.reload} />}
         {incidents.loading && <Loading />}
         {incidents.data?.length === 0 && (
           <EmptyState title="Nothing to investigate yet" icon={<Network className="size-6" />}>
-            Run <Link className="text-accent-300 underline" to="/">Simulate Attack</Link> to create a recorded incident.
+            Run <Link className="text-accent-400 hover:text-accent-300 underline font-medium" to="/">Simulate Attack</Link> to create a recorded incident.
           </EmptyState>
         )}
       </div>
@@ -91,7 +91,7 @@ function IncidentWorkspace({ incidentId, incidentIds }: { incidentId: string; in
               {incidentIds.map((id) => <option key={id} value={id}>{id}</option>)}
             </select>
           )}
-          <Button onClick={() => navigate(remediateHref)} icon={<Shield className="size-4" />}>Remediate</Button>
+          <Button onClick={() => navigate(remediateHref)} icon={<Shield className="size-4 text-accent-400" />}>Remediate</Button>
           <Button variant="primary" onClick={() => navigate(`/replay?incident=${inc.incident_id}`)} icon={<FlaskConical className="size-4" />}>Replay & verify</Button>
         </>}
       />
@@ -179,16 +179,16 @@ function IncidentWorkspace({ incidentId, incidentIds }: { incidentId: string; in
             {events.data.map((e) => (
               <li key={e.event_id}>
                 <button onClick={() => setSelected(e.event_id)} aria-current={selected === e.event_id}
-                  className={cx("grid w-full grid-cols-[86px_1fr] gap-3 border-l-2 px-5 py-2.5 text-left hover:bg-ink-850",
+                  className={cx("grid w-full grid-cols-[86px_1fr] gap-3 border-l-2 px-5 py-3 text-left hover:bg-ink-850/70 transition-colors",
                     selected === e.event_id ? "border-accent-400 bg-ink-850" : "border-transparent")}>
                   <span className="pt-0.5 font-mono text-[11px] text-ink-400">{formatClock(e.timestamp)}</span>
                   <span className="min-w-0">
                     <span className="flex flex-wrap items-center gap-2">
-                      <span className="text-xs font-medium text-ink-300">{humanize(e.event_type)}</span>
+                      <span className="text-xs font-semibold text-ink-200">{humanize(e.event_type)}</span>
                       <OutcomeTag outcome={e.outcome} />
                       {e.evidence_role && e.evidence_role !== "context" && <Badge tone={e.evidence_role === "suspicious_request" ? "warn" : "neutral"}>{humanize(e.evidence_role)}</Badge>}
                     </span>
-                    <span className="mt-0.5 block truncate text-sm text-ink-100">{e.summary}</span>
+                    <span className="mt-1 block truncate text-xs text-ink-400">{e.summary}</span>
                   </span>
                 </button>
               </li>
@@ -199,21 +199,23 @@ function IncidentWorkspace({ incidentId, incidentIds }: { incidentId: string; in
         <Card title="Policy evaluation" subtitle="Decisions recorded by the server-side gateway before any content was read.">
           <div className="space-y-4">
             {r.attempts.map((a) => (
-              <div key={a.request_event_id} className="rounded-lg border border-ink-700 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
+              <div key={a.request_event_id} className="rounded-xl border border-ink-800 bg-ink-950/40 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-ink-800/60 pb-3">
                   <Mono>{a.tool}("{a.requested_path}")</Mono>
                   <OutcomeTag outcome={a.decision} />
                 </div>
-                <KeyValue items={[
-                  ["Canonical resource", <Mono>{a.resource_id}</Mono>],
-                  ["Classification", humanize(a.sensitivity)],
-                  ["Rule", <Mono>{a.rule_id}</Mono>],
-                  ["Policy version", `v${a.policy_version}`],
-                  ["Content returned", a.content_returned ? "Yes" : `No (${a.bytes_returned ?? 0} bytes)`],
-                  ["Other matching rules", a.matched_rules.filter((m) => m !== a.rule_id).join(", ") || "none"],
-                ]} />
-                <p className="mt-3 text-xs text-ink-400">{a.reason}</p>
-                <div className="mt-2 flex flex-wrap gap-1.5">
+                <div className="mt-3">
+                  <KeyValue items={[
+                    ["Canonical resource", <Mono>{a.resource_id}</Mono>],
+                    ["Classification", humanize(a.sensitivity)],
+                    ["Rule", <Mono>{a.rule_id}</Mono>],
+                    ["Policy version", `v${a.policy_version}`],
+                    ["Content returned", a.content_returned ? "Yes" : `No (${a.bytes_returned ?? 0} bytes)`],
+                    ["Other matching rules", a.matched_rules.filter((m) => m !== a.rule_id).join(", ") || "none"],
+                  ]} />
+                </div>
+                <p className="mt-3 text-xs text-ink-400 italic bg-ink-900/50 p-2.5 rounded-lg border border-ink-800/40">{a.reason}</p>
+                <div className="mt-3 flex flex-wrap gap-1.5">
                   {[a.request_event_id, a.decision_event_id, a.result_event_id].filter(Boolean).map((id) => (
                     <EvidenceChip key={id} id={id!} onSelect={setSelected} />
                   ))}
@@ -225,14 +227,15 @@ function IncidentWorkspace({ incidentId, incidentIds }: { incidentId: string; in
       </div>
 
       <div className="grid gap-6 xl:grid-cols-2">
-        <Card title="Findings" subtitle="Observed = directly recorded. Inferred = a conclusion drawn from observations, not proof.">
-          <ul className="space-y-3">
+        <Card title="Findings" subtitle="Observed = directly recorded tool execution/decision. Inferred = reasoned deduction from observations, marked explicitly.">
+          <ul className="space-y-3.5">
             {r.findings.map((f, i) => (
-              <li key={i} className="flex gap-3">
-                <Badge tone={f.kind === "observed" ? "neutral" : "warn"} className="h-fit shrink-0 uppercase tracking-wide">{f.kind}</Badge>
+              <li key={i} className="flex gap-3.5 p-3 rounded-lg border border-ink-800/60 bg-ink-950/40">
+                <Badge tone={f.kind === "observed" ? "neutral" : "warn"} className="h-fit shrink-0 uppercase tracking-wider font-semibold text-[10px]">{f.kind}</Badge>
                 <div className="min-w-0">
-                  <p className="text-sm text-ink-200">{f.statement}</p>
-                  <div className="mt-1.5 flex flex-wrap gap-1.5">{f.evidence_event_ids.map((id) => <EvidenceChip key={id} id={id} onSelect={setSelected} />)}</div>
+                  <p className="text-sm text-ink-100 font-medium">{f.statement}</p>
+                  {f.basis && <p className="mt-1 text-xs text-ink-400">Basis: {f.basis}</p>}
+                  <div className="mt-2 flex flex-wrap gap-1.5">{f.evidence_event_ids.map((id) => <EvidenceChip key={id} id={id} onSelect={setSelected} />)}</div>
                 </div>
               </li>
             ))}
@@ -241,19 +244,19 @@ function IncidentWorkspace({ incidentId, incidentIds }: { incidentId: string; in
 
         <div className="space-y-6">
           <Card title={<span className="flex items-center gap-2"><Lightbulb className="size-4 text-accent-400" aria-hidden />Recommended mitigation</span>}>
-            <ul className="space-y-2">
+            <ul className="space-y-2.5">
               {r.recommendation.changes.map((c) => (
-                <li key={c.change_id} className="rounded-lg border border-ink-700 p-3">
-                  <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
+                <li key={c.change_id} className="rounded-xl border border-ink-800 bg-ink-950/40 p-3.5">
+                  <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-ink-100">
                     {c.title}
                     {r.recommendation.already_applied.includes(c.change_id) && <Badge tone="good">already active</Badge>}
                   </div>
-                  <p className="mt-1 text-xs text-ink-400">{c.explanation}</p>
+                  <p className="mt-1 text-xs leading-relaxed text-ink-400">{c.explanation}</p>
                 </li>
               ))}
             </ul>
-            <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-ink-400">{r.recommendation.rationale.map((x, i) => <li key={i}>{x}</li>)}</ul>
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+            <ul className="mt-3.5 list-disc space-y-1 pl-5 text-xs text-ink-400">{r.recommendation.rationale.map((x, i) => <li key={i}>{x}</li>)}</ul>
+            <div className="mt-4 pt-3.5 border-t border-ink-800/70 flex flex-wrap items-center justify-between gap-3">
               <p className="text-sm text-ink-300">{r.recommendation.next_step}</p>
               {r.recommendation.change_ids.length > 0
                 ? <Button variant="primary" onClick={() => navigate(remediateHref)} icon={<ArrowRight className="size-4" />}>Review policy change</Button>
@@ -261,8 +264,8 @@ function IncidentWorkspace({ incidentId, incidentIds }: { incidentId: string; in
             </div>
           </Card>
 
-          <Card title={<span className="flex items-center gap-2"><HelpCircle className="size-4 text-amber-300" aria-hidden />Uncertainty & missing evidence</span>}>
-            <ul className="list-disc space-y-1.5 pl-5 text-sm text-ink-300">{r.uncertainties.map((u, i) => <li key={i}>{u}</li>)}</ul>
+          <Card title={<span className="flex items-center gap-2"><HelpCircle className="size-4 text-amber-400" aria-hidden />Uncertainty & missing evidence</span>}>
+            <ul className="list-disc space-y-2 pl-5 text-sm text-ink-300">{r.uncertainties.map((u, i) => <li key={i}>{u}</li>)}</ul>
           </Card>
 
           <AiExplanationCard incidentId={inc.incident_id} onSelect={setSelected} />
@@ -276,7 +279,7 @@ function IncidentWorkspace({ incidentId, incidentIds }: { incidentId: string; in
 
 function EvidenceChip({ id, onSelect }: { id: string; onSelect: (id: string) => void }) {
   return (
-    <button onClick={() => onSelect(id)} className="rounded border border-ink-700 bg-ink-850 px-1.5 py-0.5 font-mono text-[11px] text-ink-300 hover:border-accent-500/50 hover:text-accent-300">
+    <button onClick={() => onSelect(id)} className="rounded-md border border-ink-700 bg-ink-850 px-2 py-0.5 font-mono text-[11px] text-ink-300 hover:border-accent-400/60 hover:text-accent-300 transition-colors">
       {id}
     </button>
   );
@@ -287,12 +290,12 @@ function EventDetail({ event, node }: { event: AfterEvent; node?: GraphNode }) {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         {node && <CategoryBadge category={node.category} />}
-        <span className="text-sm font-medium">{humanize(event.event_type)}</span>
+        <span className="text-sm font-semibold text-ink-100">{humanize(event.event_type)}</span>
       </div>
       <p className="text-sm text-ink-200">{event.summary}</p>
       <KeyValue items={[
         ["Event ID", <Mono>{event.event_id}</Mono>],
-        ["Timestamp (UTC)", <span className="font-mono text-xs">{event.timestamp}</span>],
+        ["Timestamp (UTC)", <span className="font-mono text-xs text-ink-300">{event.timestamp}</span>],
         ["Actor", event.actor],
         ["Action", event.action],
         ["Outcome", <OutcomeTag outcome={event.outcome} />],
@@ -301,10 +304,10 @@ function EventDetail({ event, node }: { event: AfterEvent; node?: GraphNode }) {
         ["Policy decision", event.policy_decision_id ? <Mono>{event.policy_decision_id}</Mono> : "—"],
       ]} />
       <div>
-        <div className="mb-1 text-xs font-medium text-ink-400">Evidence metadata</div>
-        <pre className="scroll-thin max-h-56 overflow-auto rounded-lg bg-ink-950 p-3 font-mono text-[11px] leading-relaxed text-ink-300">{JSON.stringify(event.evidence_metadata, null, 2)}</pre>
+        <div className="mb-1.5 text-xs font-semibold text-ink-400">Evidence metadata</div>
+        <pre className="scroll-thin max-h-56 overflow-auto rounded-lg bg-ink-950 p-3 font-mono text-[11px] leading-relaxed text-ink-300 border border-ink-800/80">{JSON.stringify(event.evidence_metadata, null, 2)}</pre>
       </div>
-      <div className="text-[11px] text-ink-500">Event hash <span className="font-mono">{event.event_hash.slice(0, 24)}…</span></div>
+      <div className="text-[11px] text-ink-500 font-mono">Hash: {event.event_hash.slice(0, 24)}…</div>
     </div>
   );
 }
@@ -323,9 +326,9 @@ function AnnotationForm({ incidentId, onSaved }: { incidentId: string; onSaved: 
       subtitle="Notes and status changes are appended as new events; history is never overwritten.">
       <form onSubmit={(e) => { e.preventDefault(); if (text.trim()) void save.run(); }} className="space-y-3">
         <textarea aria-label="Note" value={text} onChange={(e) => setText(e.target.value)} maxLength={500} rows={2} placeholder="e.g. Reviewed — attack contained by gateway."
-          className="w-full rounded-lg border border-ink-700 bg-ink-950 px-3 py-2 text-sm placeholder:text-ink-500" />
+          className="w-full rounded-lg border border-ink-700 bg-ink-950 px-3 py-2 text-sm text-ink-100 placeholder:text-ink-500 focus:border-accent-400 outline-none" />
         <div className="flex flex-wrap items-center gap-2">
-          <select aria-label="Status change" value={status} onChange={(e) => setStatus(e.target.value)} className="rounded-lg border border-ink-700 bg-ink-900 px-3 py-2 text-sm">
+          <select aria-label="Status change" value={status} onChange={(e) => setStatus(e.target.value)} className="rounded-lg border border-ink-700 bg-ink-900 px-3 py-2 text-sm text-ink-200">
             <option value="">No status change</option>
             {["investigating", "contained", "resolved"].map((s) => <option key={s} value={s}>Set status: {s}</option>)}
           </select>

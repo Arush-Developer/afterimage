@@ -13,7 +13,6 @@ const KEY_SOURCE_LABEL = {
   session: "key for this session only",
 } as const;
 
-/** Write-only key entry: the key goes to the local backend once and is never shown again. */
 function ApiKeyEditor({ provider, label, source, onChanged }: {
   provider: "anthropic" | "gemini"; label: string; source: ProviderStatus["key_source"]; onChanged: () => Promise<void>;
 }) {
@@ -34,12 +33,12 @@ function ApiKeyEditor({ provider, label, source, onChanged }: {
 
   if (!open) {
     return (
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        <Button className="px-2.5 py-1 text-xs" icon={<KeyRound className="size-3.5" aria-hidden />} onClick={() => setOpen(true)}>
+      <div className="mt-2.5 flex flex-wrap items-center gap-2">
+        <Button className="px-2.5 py-1 text-xs" icon={<KeyRound className="size-3.5 text-accent-400" aria-hidden />} onClick={() => setOpen(true)}>
           {source ? "Replace API key" : "Add API key"}
         </Button>
         {removable && (
-          <Button variant="ghost" className="px-2 py-1 text-xs" pending={remove.pending} onClick={() => void remove.run()}>
+          <Button variant="ghost" className="px-2.5 py-1 text-xs text-rose-300 hover:text-rose-200" pending={remove.pending} onClick={() => void remove.run()}>
             Remove key
           </Button>
         )}
@@ -48,15 +47,15 @@ function ApiKeyEditor({ provider, label, source, onChanged }: {
     );
   }
   return (
-    <form className="mt-2 space-y-2 rounded-lg border border-ink-700 bg-ink-950/60 p-3"
+    <form className="mt-2.5 space-y-2.5 rounded-xl border border-ink-700 bg-ink-950/80 p-3.5"
       onSubmit={(e) => { e.preventDefault(); if (value.trim()) void save.run(); }}>
-      <label className="block text-xs text-ink-300">
+      <label className="block text-xs font-semibold text-ink-300">
         {label} API key
         <input type="password" value={value} onChange={(e) => setValue(e.target.value)} autoComplete="off" spellCheck={false}
           autoFocus placeholder="Paste your key" aria-label={`${label} API key`}
-          className="mt-1 w-full rounded-lg border border-ink-700 bg-ink-950 px-3 py-2 font-mono text-sm text-ink-100 placeholder:text-ink-500" />
+          className="mt-1 w-full rounded-lg border border-ink-700 bg-ink-900 px-3 py-2 font-mono text-sm text-ink-100 placeholder:text-ink-500 outline-none focus:border-accent-400" />
       </label>
-      <label className="flex items-start gap-2 text-xs text-ink-300">
+      <label className="flex items-start gap-2 text-xs text-ink-400">
         <input type="checkbox" className="mt-0.5 accent-[var(--color-accent-500)]" checked={remember}
           onChange={(e) => setRemember(e.target.checked)} />
         <span>Remember on this computer (saved unencrypted in <Mono>backend/data/provider_keys.json</Mono>, readable only by
@@ -65,7 +64,7 @@ function ApiKeyEditor({ provider, label, source, onChanged }: {
       <p className="text-xs text-ink-500">
         The key is sent only to your local AFTERIMAGE backend and is never shown again or sent to the agent.
       </p>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2 pt-1">
         <Button type="submit" variant="primary" className="px-3 py-1.5 text-xs" pending={save.pending} disabled={!value.trim()}>Save key</Button>
         <Button variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => { setValue(""); setOpen(false); }}>Cancel</Button>
       </div>
@@ -79,12 +78,12 @@ function ProviderStatusRow({ status, model, onChanged }: { status: ProviderStatu
   const run = useAction(async () => setCheck(await api.checkProvider(status.provider)));
   const usesKey = status.provider === "anthropic" || status.provider === "gemini";
   return (
-    <li className="rounded-lg border border-ink-700 p-3 text-sm">
+    <li className="rounded-xl border border-ink-800 bg-ink-950/40 p-3.5 text-sm">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="font-medium">{status.label}</span>
+        <span className="font-semibold text-ink-100">{status.label}</span>
         <span className="flex items-center gap-2">
           {status.configured ? <Badge tone="good">configured</Badge> : <Badge tone="neutral">not configured</Badge>}
-          <Button variant="ghost" className="px-2 py-1 text-xs" onClick={() => void run.run()} pending={run.pending}>Check</Button>
+          <Button variant="ghost" className="px-2.5 py-1 text-xs" onClick={() => void run.run()} pending={run.pending}>Check</Button>
         </span>
       </div>
       <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-ink-400">
@@ -92,13 +91,13 @@ function ProviderStatusRow({ status, model, onChanged }: { status: ProviderStatu
         <span>model <Mono>{model}</Mono></span>
         {status.key_source && <span>· {KEY_SOURCE_LABEL[status.key_source]}</span>}
       </div>
-      <p className="mt-1 text-xs text-ink-400">{status.detail}</p>
+      <p className="mt-1.5 text-xs leading-relaxed text-ink-400">{status.detail}</p>
       {usesKey && (
         <ApiKeyEditor provider={status.provider as "anthropic" | "gemini"} label={status.label} source={status.key_source}
           onChanged={async () => { setCheck(undefined); await onChanged(); }} />
       )}
-      {check && <div className="mt-2"><CheckResult check={check} /></div>}
-      {run.error && <p role="alert" className="mt-1 text-xs text-rose-300">{run.error}</p>}
+      {check && <div className="mt-2.5"><CheckResult check={check} /></div>}
+      {run.error && <p role="alert" className="mt-1.5 text-xs text-rose-300">{run.error}</p>}
     </li>
   );
 }
@@ -127,7 +126,7 @@ export function Settings() {
   return (
     <div className="space-y-6">
       <PageHeader title="Settings" description="Local environment status and safe reset controls." />
-      {done && <div role="status" className="rounded-xl border border-accent-500/30 bg-accent-500/5 px-4 py-3 text-sm">{done}</div>}
+      {done && <div role="status" className="rounded-xl border border-accent-500/40 bg-accent-500/10 px-4 py-3.5 text-sm text-ink-100">{done}</div>}
 
       <div className="grid gap-6 xl:grid-cols-2">
         <Card title={<span className="flex items-center gap-2"><Database className="size-4 text-accent-400" aria-hidden />Local database</span>}>
@@ -141,7 +140,7 @@ export function Settings() {
               : <Badge tone="bad">broken at {s.database.hash_chain.first_invalid_event_id}</Badge>],
             ["Archives", s.archives.length ? s.archives.join(", ") : "none"],
           ]} />
-          <p className="mt-4 text-xs text-ink-400">The hash chain makes casual edits to individual rows detectable. It is not tamper-proof: anyone with write access to the database file could rebuild the whole chain.</p>
+          <p className="mt-4 text-xs text-ink-500">The hash chain makes casual edits to individual rows detectable. It is not tamper-proof: anyone with write access to the database file could rebuild the whole chain.</p>
         </Card>
 
         <Card title={<span className="flex items-center gap-2"><FlaskRound className="size-4 text-accent-400" aria-hidden />Demo environment</span>}>
@@ -170,12 +169,12 @@ export function Settings() {
             ["Max experiment trials", s.llm.max_trials],
           ]} />
           <div>
-            <div className="mb-2 text-xs font-medium text-ink-400">Provider status (credentials never shown)</div>
-            <ul className="space-y-2">
+            <div className="mb-2.5 text-xs font-semibold text-ink-400 uppercase tracking-wider">Provider status (credentials never shown)</div>
+            <ul className="space-y-2.5">
               {s.llm.providers.map((p) => <ProviderStatusRow key={p.provider} status={p} model={s.llm.models[p.provider]} onChanged={settings.reload} />)}
             </ul>
-            <p className="mt-2 text-xs text-ink-500">
-              Ollama host <Mono>{s.llm.ollama_host}</Mono> · {s.llm.ollama_local_only ? "restricted to this machine (loopback only)" : "remote host explicitly allowed"}.
+            <p className="mt-2.5 text-xs text-ink-500 leading-relaxed font-mono">
+              Ollama host <Mono>{s.llm.ollama_host}</Mono> · {s.llm.ollama_local_only ? "loopback only" : "remote allowed"}.
               No provider ever falls back to another.
             </p>
           </div>
@@ -183,20 +182,20 @@ export function Settings() {
       </Card>
 
       <Card title={<span className="flex items-center gap-2"><Cloud className="size-4 text-ink-400" aria-hidden />Cloud sync</span>}>
-        <div className="flex flex-wrap items-center gap-3 text-sm"><Badge>{s.cloud_sync.status.replace("_", " ")}</Badge><span className="text-ink-300">{s.cloud_sync.detail}</span></div>
+        <div className="flex flex-wrap items-center gap-3 text-sm"><Badge>{s.cloud_sync.status.replace(/_/g, " ")}</Badge><span className="text-ink-400">{s.cloud_sync.detail}</span></div>
       </Card>
 
       <Card title="Reset" subtitle="Resets never silently erase evidence.">
         <div className="grid gap-4 md:grid-cols-2">
-          <div className="rounded-lg border border-ink-700 p-4">
-            <div className="flex items-center gap-2 text-sm font-medium"><RotateCcw className="size-4" aria-hidden />Reset demo environment</div>
-            <p className="mt-1 text-sm text-ink-400">Restores the baseline policy (as a new version), resets vault files (snapshotting them first) and removes per-run synthetic workspaces. All runs, incidents, events and replay reports are kept.</p>
-            <Button className="mt-3" onClick={() => { setMode("demo"); setTyped(""); }}>Reset demo…</Button>
+          <div className="rounded-xl border border-ink-800 bg-ink-950/40 p-4.5">
+            <div className="flex items-center gap-2 text-sm font-semibold text-ink-100"><RotateCcw className="size-4 text-ink-400" aria-hidden />Reset demo environment</div>
+            <p className="mt-1.5 text-xs leading-relaxed text-ink-400">Restores the baseline policy (as a new version), resets vault files (snapshotting them first) and removes per-run synthetic workspaces. All runs, incidents, events and replay reports are kept.</p>
+            <Button className="mt-3.5" onClick={() => { setMode("demo"); setTyped(""); }}>Reset demo…</Button>
           </div>
-          <div className="rounded-lg border border-rose-400/20 p-4">
-            <div className="flex items-center gap-2 text-sm font-medium text-rose-200"><Trash2 className="size-4" aria-hidden />Archive & start fresh</div>
-            <p className="mt-1 text-sm text-ink-400">Copies the full database to <Mono>data/archives/</Mono>, then starts a new empty database. Evidence is preserved in the archive file, not deleted.</p>
-            <Button variant="danger" className="mt-3" onClick={() => { setMode("full"); setTyped(""); }}>Archive & reset…</Button>
+          <div className="rounded-xl border border-rose-500/25 bg-rose-500/5 p-4.5">
+            <div className="flex items-center gap-2 text-sm font-semibold text-rose-200"><Trash2 className="size-4 text-rose-400" aria-hidden />Archive & start fresh</div>
+            <p className="mt-1.5 text-xs leading-relaxed text-ink-400">Copies the full database to <Mono>data/archives/</Mono>, then starts a new empty database. Evidence is preserved in the archive file, not deleted.</p>
+            <Button variant="danger" className="mt-3.5" onClick={() => { setMode("full"); setTyped(""); }}>Archive & reset…</Button>
           </div>
         </div>
       </Card>
@@ -207,9 +206,9 @@ export function Settings() {
         <p>{mode === "full"
           ? "The current database will be archived, then replaced by an empty one. The dashboard will start from zero."
           : "Policy, vault files and run workspaces return to their initial state. Recorded evidence stays."}</p>
-        <label className="block">Type <Mono>{phrase}</Mono> to confirm
+        <label className="block text-xs font-semibold text-ink-300">Type <Mono>{phrase}</Mono> to confirm
           <input aria-label="Confirmation phrase" value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off"
-            className="mt-1 w-full rounded-lg border border-ink-700 bg-ink-950 px-3 py-2 font-mono text-sm text-ink-100" />
+            className="mt-1.5 w-full rounded-lg border border-ink-700 bg-ink-950 px-3 py-2 font-mono text-sm text-ink-100 outline-none focus:border-accent-400" />
         </label>
         <InlineError message={reset.error} />
       </ConfirmDialog>
